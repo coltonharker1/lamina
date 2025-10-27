@@ -1,0 +1,22 @@
+# Build directories
+build/
+Builds/
+cmake-build-*/
+
+# IDE files
+.vscode/
+.idea/
+*.xcodeproj/
+*.xcworkspace/
+
+# macOS
+.DS_Store
+
+# Plugin binaries (will be generated)
+*.vst3
+*.component
+*.aax
+
+# CMake
+CMakeCache.txt
+CMakeFiles/
