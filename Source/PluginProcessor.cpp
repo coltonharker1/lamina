@@ -2,6 +2,20 @@
 #include "PluginEditor.h"
 
 //==============================================================================
+// Parameter IDs
+namespace ParameterIDs
+{
+    const juce::String position { "position" };
+    const juce::String spray { "spray" };
+    const juce::String grainSize { "grainSize" };
+    const juce::String density { "density" };
+    const juce::String pitch { "pitch" };
+    const juce::String pan { "pan" };
+    const juce::String dryWet { "dryWet" };
+    const juce::String gain { "gain" };
+}
+
+//==============================================================================
 GrainsAudioProcessor::GrainsAudioProcessor()
 #ifndef JucePlugin_PreferredChannelConfigurations
      : AudioProcessor (BusesProperties()
@@ -11,13 +25,94 @@ GrainsAudioProcessor::GrainsAudioProcessor()
                       #endif
                        .withOutput ("Output", juce::AudioChannelSet::stereo(), true)
                      #endif
-                       )
+                       ),
+       apvts (*this, nullptr, "Parameters", createParameterLayout())
 #endif
 {
 }
 
 GrainsAudioProcessor::~GrainsAudioProcessor()
 {
+}
+
+//==============================================================================
+juce::AudioProcessorValueTreeState::ParameterLayout GrainsAudioProcessor::createParameterLayout()
+{
+    juce::AudioProcessorValueTreeState::ParameterLayout layout;
+
+    // Position: Where in the sample grains spawn (0-100%)
+    layout.add(std::make_unique<juce::AudioParameterFloat>(
+        ParameterIDs::position,
+        "Position",
+        juce::NormalisableRange<float>(0.0f, 100.0f, 0.1f),
+        50.0f,  // Default: middle of sample
+        "%"
+    ));
+
+    // Spray: Random deviation from position (0-100%)
+    layout.add(std::make_unique<juce::AudioParameterFloat>(
+        ParameterIDs::spray,
+        "Spray",
+        juce::NormalisableRange<float>(0.0f, 100.0f, 0.1f),
+        10.0f,  // Default: 10% randomization
+        "%"
+    ));
+
+    // Grain Size: Duration of each grain (5-500ms)
+    layout.add(std::make_unique<juce::AudioParameterFloat>(
+        ParameterIDs::grainSize,
+        "Grain Size",
+        juce::NormalisableRange<float>(5.0f, 500.0f, 1.0f, 0.3f),  // Skewed toward smaller values
+        100.0f,  // Default: 100ms
+        "ms"
+    ));
+
+    // Density: Grains per second (1-100)
+    layout.add(std::make_unique<juce::AudioParameterFloat>(
+        ParameterIDs::density,
+        "Density",
+        juce::NormalisableRange<float>(1.0f, 100.0f, 0.1f, 0.5f),  // Skewed toward lower values
+        20.0f,  // Default: 20 grains/sec
+        " gr/s"
+    ));
+
+    // Pitch: Playback speed (-24 to +24 semitones)
+    layout.add(std::make_unique<juce::AudioParameterFloat>(
+        ParameterIDs::pitch,
+        "Pitch",
+        juce::NormalisableRange<float>(-24.0f, 24.0f, 0.01f),
+        0.0f,  // Default: no pitch shift
+        " st"
+    ));
+
+    // Pan: Stereo position (-100 to +100, 0 = center)
+    layout.add(std::make_unique<juce::AudioParameterFloat>(
+        ParameterIDs::pan,
+        "Pan",
+        juce::NormalisableRange<float>(-100.0f, 100.0f, 1.0f),
+        0.0f,  // Default: center
+        ""
+    ));
+
+    // Dry/Wet: Mix between dry signal and grains (0-100%)
+    layout.add(std::make_unique<juce::AudioParameterFloat>(
+        ParameterIDs::dryWet,
+        "Dry/Wet",
+        juce::NormalisableRange<float>(0.0f, 100.0f, 0.1f),
+        100.0f,  // Default: 100% wet
+        "%"
+    ));
+
+    // Gain: Output level (0-200%)
+    layout.add(std::make_unique<juce::AudioParameterFloat>(
+        ParameterIDs::gain,
+        "Gain",
+        juce::NormalisableRange<float>(0.0f, 200.0f, 0.1f),
+        100.0f,  // Default: 100% (unity gain)
+        "%"
+    ));
+
+    return layout;
 }
 
 //==============================================================================
@@ -85,8 +180,10 @@ void GrainsAudioProcessor::changeProgramName (int index, const juce::String& new
 //==============================================================================
 void GrainsAudioProcessor::prepareToPlay (double sampleRate, int samplesPerBlock)
 {
-    // Use this method as the place to do any pre-playback
-    // initialisation that you need..
+    currentSampleRate = sampleRate;
+
+    // TODO: Initialize grain engine here
+    // grainEngine.prepare(sampleRate, samplesPerBlock);
 }
 
 void GrainsAudioProcessor::releaseResources()
@@ -157,15 +254,20 @@ juce::AudioProcessorEditor* GrainsAudioProcessor::createEditor()
 //==============================================================================
 void GrainsAudioProcessor::getStateInformation (juce::MemoryBlock& destData)
 {
-    // You should use this method to store your parameters in the memory block.
-    // You could do that either as raw data, or use the XML or ValueTree classes
-    // as intermediaries to make it easy to save and load complex data.
+    // Save parameter state
+    auto state = apvts.copyState();
+    std::unique_ptr<juce::XmlElement> xml (state.createXml());
+    copyXmlToBinary (*xml, destData);
 }
 
 void GrainsAudioProcessor::setStateInformation (const void* data, int sizeInBytes)
 {
-    // You should use this method to restore your parameters from this memory block,
-    // whose contents will have been created by the getStateInformation() call.
+    // Restore parameter state
+    std::unique_ptr<juce::XmlElement> xmlState (getXmlFromBinary (data, sizeInBytes));
+
+    if (xmlState.get() != nullptr)
+        if (xmlState->hasTagName (apvts.state.getType()))
+            apvts.replaceState (juce::ValueTree::fromXml (*xmlState));
 }
 
 //==============================================================================

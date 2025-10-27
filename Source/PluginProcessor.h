@@ -47,7 +47,23 @@ public:
     void getStateInformation (juce::MemoryBlock& destData) override;
     void setStateInformation (const void* data, int sizeInBytes) override;
 
+    //==============================================================================
+    // Public access to parameters for UI binding
+    juce::AudioProcessorValueTreeState& getAPVTS() { return apvts; }
+    static juce::AudioProcessorValueTreeState::ParameterLayout createParameterLayout();
+
 private:
+    //==============================================================================
+    // Parameter management
+    juce::AudioProcessorValueTreeState apvts;
+
+    // Audio sample buffer
+    juce::AudioBuffer<float> sampleBuffer;
+    std::atomic<bool> sampleLoaded { false };
+
+    // Processing state
+    double currentSampleRate = 44100.0;
+
     //==============================================================================
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (GrainsAudioProcessor)
 };
