@@ -14,8 +14,8 @@ add_subdirectory(/Users/colton/Downloads/JUCE ${CMAKE_CURRENT_BINARY_DIR}/JUCE)
 # Plugin configuration
 juce_add_plugin(GrainsVST
     COMPANY_NAME "YourCompany"                    # Change this later
-    IS_SYNTH FALSE                                # It's an effect, not a synth
-    NEEDS_MIDI_INPUT FALSE                        # No MIDI for MVP
+    IS_SYNTH TRUE                                 # MIDI instrument/synth
+    NEEDS_MIDI_INPUT TRUE                         # Accepts MIDI notes
     NEEDS_MIDI_OUTPUT FALSE
     IS_MIDI_EFFECT FALSE
     EDITOR_WANTS_KEYBOARD_FOCUS FALSE

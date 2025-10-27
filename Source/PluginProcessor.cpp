@@ -265,16 +265,13 @@ bool GrainsAudioProcessor::isBusesLayoutSupported (const BusesLayout& layouts) c
 void GrainsAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::MidiBuffer& midiMessages)
 {
     juce::ScopedNoDenormals noDenormals;
-    juce::ignoreUnused(midiMessages);
 
-    auto totalNumInputChannels  = getTotalNumInputChannels();
     auto totalNumOutputChannels = getTotalNumOutputChannels();
 
-    // Clear output channels
-    for (auto i = totalNumInputChannels; i < totalNumOutputChannels; ++i)
-        buffer.clear (i, 0, buffer.getNumSamples());
+    // Clear all output channels
+    buffer.clear();
 
-    // If no sample is loaded, pass audio through unchanged (bypass mode)
+    // If no sample is loaded, output silence
     if (!sampleLoaded.load())
         return;
 
@@ -285,7 +282,6 @@ void GrainsAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce:
     float density = apvts.getRawParameterValue(ParameterIDs::density)->load();
     float pitch = apvts.getRawParameterValue(ParameterIDs::pitch)->load();
     float pan = apvts.getRawParameterValue(ParameterIDs::pan)->load() / 100.0f;  // Convert to -1..1
-    float dryWet = apvts.getRawParameterValue(ParameterIDs::dryWet)->load() / 100.0f;  // Convert to 0..1
     float gain = apvts.getRawParameterValue(ParameterIDs::gain)->load() / 100.0f;  // Convert to multiplier
 
     // Phase 2 parameters
@@ -294,31 +290,29 @@ void GrainsAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce:
     bool freeze = apvts.getRawParameterValue(ParameterIDs::freeze)->load() > 0.5f;
     float reverse = apvts.getRawParameterValue(ParameterIDs::reverse)->load();
 
-    // Store dry signal for dry/wet mix
-    juce::AudioBuffer<float> dryBuffer;
-    dryBuffer.makeCopyOf(buffer);
+    // Process MIDI messages to track notes
+    for (const auto metadata : midiMessages)
+    {
+        auto message = metadata.getMessage();
 
-    // Clear buffer before generating grains
-    buffer.clear();
+        if (message.isNoteOn())
+        {
+            // Note on: enable grain generation
+            grainEngine.noteOn(message.getNoteNumber(), message.getVelocity());
+        }
+        else if (message.isNoteOff())
+        {
+            // Note off: disable grain generation for that note
+            grainEngine.noteOff(message.getNoteNumber());
+        }
+    }
 
-    // Generate grains with Phase 2 parameters
+    // Generate grains for any active notes
     grainEngine.process(buffer, position / 100.0f, spray, grainSize, density,
                        pitch, pitchSpread, pan, panSpread, freeze, reverse);
 
     // Apply gain
     buffer.applyGain(gain);
-
-    // Mix dry and wet
-    for (int channel = 0; channel < totalNumOutputChannels; ++channel)
-    {
-        auto* wetData = buffer.getWritePointer(channel);
-        const auto* dryData = dryBuffer.getReadPointer(juce::jmin(channel, dryBuffer.getNumChannels() - 1));
-
-        for (int sample = 0; sample < buffer.getNumSamples(); ++sample)
-        {
-            wetData[sample] = wetData[sample] * dryWet + dryData[sample] * (1.0f - dryWet);
-        }
-    }
 }
 
 //==============================================================================

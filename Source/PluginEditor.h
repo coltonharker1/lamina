@@ -10,7 +10,8 @@
  */
 class GrainsAudioProcessorEditor  : public juce::AudioProcessorEditor,
                                      private juce::Slider::Listener,
-                                     private juce::Button::Listener
+                                     private juce::Button::Listener,
+                                     private juce::FileDragAndDropTarget
 {
 public:
     GrainsAudioProcessorEditor (GrainsAudioProcessor&);
@@ -28,10 +29,15 @@ private:
     // Button listener
     void buttonClicked (juce::Button* button) override;
 
+    // Drag and drop
+    bool isInterestedInFileDrag (const juce::StringArray& files) override;
+    void filesDropped (const juce::StringArray& files, int x, int y) override;
+
     //==============================================================================
     // Helper to create a styled slider
     void setupSlider (juce::Slider& slider, const juce::String& paramID);
     void setupLabel (juce::Label& label, const juce::String& text);
+    void loadAudioFile (const juce::File& file);
 
     //==============================================================================
     GrainsAudioProcessor& audioProcessor;

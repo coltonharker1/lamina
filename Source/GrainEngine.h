@@ -4,6 +4,7 @@
 #include "GrainVoice.h"
 #include <vector>
 #include <random>
+#include <set>
 
 //==============================================================================
 /**
@@ -48,6 +49,26 @@ public:
     }
 
     //==============================================================================
+    /** Note on - start playing grains */
+    void noteOn(int midiNote, int velocity)
+    {
+        juce::ignoreUnused(velocity);  // Could use for volume control later
+        activeNotes.insert(midiNote);
+    }
+
+    /** Note off - stop playing grains */
+    void noteOff(int midiNote)
+    {
+        activeNotes.erase(midiNote);
+    }
+
+    /** Check if any notes are active */
+    bool hasActiveNotes() const
+    {
+        return !activeNotes.empty();
+    }
+
+    //==============================================================================
     /** Process a block of audio */
     void process(juce::AudioBuffer<float>& outputBuffer,
                  float position01,           // 0-1: position in sample
@@ -85,16 +106,20 @@ public:
 
         for (int sample = 0; sample < numSamples; ++sample)
         {
-            // Check if it's time to start a new grain
-            if (samplesToNextGrain <= 0.0)
+            // Only generate new grains if notes are being held
+            if (hasActiveNotes())
             {
-                startNewGrain(actualPosition, sprayPercent, grainSizeMs,
-                             pitchSemitones, pitchSpreadSemitones,
-                             panPosition, panSpreadPercent, reversePercent);
-                samplesToNextGrain += samplesPerGrain;
-            }
+                // Check if it's time to start a new grain
+                if (samplesToNextGrain <= 0.0)
+                {
+                    startNewGrain(actualPosition, sprayPercent, grainSizeMs,
+                                 pitchSemitones, pitchSpreadSemitones,
+                                 panPosition, panSpreadPercent, reversePercent);
+                    samplesToNextGrain += samplesPerGrain;
+                }
 
-            samplesToNextGrain -= 1.0;
+                samplesToNextGrain -= 1.0;
+            }
 
             // Mix all active grains
             float leftSample = 0.0f;
@@ -187,4 +212,7 @@ private:
     // Freeze mode state
     bool wasFrozen = false;
     float frozenPosition = 0.5f;
+
+    // MIDI note tracking
+    std::set<int> activeNotes;
 };

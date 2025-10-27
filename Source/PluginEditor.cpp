@@ -10,7 +10,13 @@ GrainsAudioProcessorEditor::GrainsAudioProcessorEditor (GrainsAudioProcessor& p)
     loadSampleButton.addListener(this);
     loadSampleButton.setColour(juce::TextButton::buttonColourId, juce::Colour(0xff22c55e));
     loadSampleButton.setColour(juce::TextButton::textColourOffId, juce::Colours::black);
+    loadSampleButton.setClickingTogglesState(false);
+    loadSampleButton.setEnabled(true);
     addAndMakeVisible(loadSampleButton);
+
+    // Write to a log file for debugging
+    juce::File logFile = juce::File::getSpecialLocation(juce::File::userDesktopDirectory).getChildFile("grains_debug.txt");
+    logFile.appendText("Grains VST Plugin Initialized\n");
 
     // Sample status label
     sampleLabel.setText("No sample loaded", juce::dontSendNotification);
@@ -119,7 +125,8 @@ void GrainsAudioProcessorEditor::resized()
 
     // Load sample section
     auto loadArea = area.removeFromTop(80);
-    loadSampleButton.setBounds(loadArea.reduced(20, 15).removeFromTop(35));
+    auto buttonArea = loadArea.removeFromTop(40);
+    loadSampleButton.setBounds(buttonArea.reduced(20, 5));
     sampleLabel.setBounds(loadArea.reduced(20, 5));
 
     // Sliders section - 2 rows of 4
@@ -184,36 +191,110 @@ void GrainsAudioProcessorEditor::sliderValueChanged (juce::Slider* slider)
 
 void GrainsAudioProcessorEditor::buttonClicked (juce::Button* button)
 {
+    juce::File logFile = juce::File::getSpecialLocation(juce::File::userDesktopDirectory).getChildFile("grains_debug.txt");
+    logFile.appendText("Button clicked!\n");
+
     if (button == &loadSampleButton)
     {
+        logFile.appendText("Load Sample button clicked!\n");
+        DBG("Load Sample button clicked!");
+
         // Open file chooser (modern async API)
         auto chooserFlags = juce::FileBrowserComponent::openMode | juce::FileBrowserComponent::canSelectFiles;
 
         auto fileChooser = std::make_shared<juce::FileChooser>(
             "Select an audio file to load...",
             juce::File::getSpecialLocation(juce::File::userHomeDirectory),
-            "*.wav;*.aif;*.aiff;*.mp3");
+            "*.wav;*.aif;*.aiff;*.mp3;*.flac;*.ogg");
+
+        logFile.appendText("About to launch file chooser...\n");
 
         fileChooser->launchAsync(chooserFlags, [this, fileChooser](const juce::FileChooser& chooser)
         {
+            juce::File logFile2 = juce::File::getSpecialLocation(juce::File::userDesktopDirectory).getChildFile("grains_debug.txt");
             juce::File file = chooser.getResult();
+            logFile2.appendText("File chooser returned: " + file.getFullPathName() + "\n");
+            DBG("File chooser returned: " + file.getFullPathName());
 
             if (file.existsAsFile())
             {
-                audioProcessor.loadSampleFromFile(file);
-
-                if (audioProcessor.isSampleLoaded())
-                {
-                    sampleLabel.setText(file.getFileNameWithoutExtension(), juce::dontSendNotification);
-                    sampleLabel.setColour(juce::Label::textColourId, juce::Colour(0xff22c55e));
-                }
-                else
-                {
-                    sampleLabel.setText("Failed to load sample", juce::dontSendNotification);
-                    sampleLabel.setColour(juce::Label::textColourId, juce::Colours::red);
-                }
+                loadAudioFile(file);
             }
         });
+    }
+}
+
+//==============================================================================
+// Drag and drop support
+bool GrainsAudioProcessorEditor::isInterestedInFileDrag (const juce::StringArray& files)
+{
+    juce::File logFile = juce::File::getSpecialLocation(juce::File::userDesktopDirectory).getChildFile("grains_debug.txt");
+    logFile.appendText("isInterestedInFileDrag called with " + juce::String(files.size()) + " files\n");
+
+    // Accept audio files
+    for (const auto& file : files)
+    {
+        logFile.appendText("  Checking file: " + file + "\n");
+        if (file.endsWithIgnoreCase(".wav") ||
+            file.endsWithIgnoreCase(".aif") ||
+            file.endsWithIgnoreCase(".aiff") ||
+            file.endsWithIgnoreCase(".mp3") ||
+            file.endsWithIgnoreCase(".flac") ||
+            file.endsWithIgnoreCase(".ogg"))
+        {
+            logFile.appendText("  Accepted!\n");
+            return true;
+        }
+    }
+    logFile.appendText("  Rejected all files\n");
+    return false;
+}
+
+void GrainsAudioProcessorEditor::filesDropped (const juce::StringArray& files, int x, int y)
+{
+    juce::ignoreUnused(x, y);
+    juce::File logFile = juce::File::getSpecialLocation(juce::File::userDesktopDirectory).getChildFile("grains_debug.txt");
+    logFile.appendText("filesDropped called!\n");
+
+    if (files.size() > 0)
+    {
+        juce::File file(files[0]);
+        logFile.appendText("File dropped: " + file.getFullPathName() + "\n");
+        DBG("File dropped: " + file.getFullPathName());
+        loadAudioFile(file);
+    }
+}
+
+//==============================================================================
+void GrainsAudioProcessorEditor::loadAudioFile (const juce::File& file)
+{
+    juce::File logFile = juce::File::getSpecialLocation(juce::File::userDesktopDirectory).getChildFile("grains_debug.txt");
+    logFile.appendText("loadAudioFile called: " + file.getFullPathName() + "\n");
+
+    if (!file.existsAsFile())
+    {
+        logFile.appendText("ERROR: File does not exist!\n");
+        DBG("File does not exist: " + file.getFullPathName());
+        return;
+    }
+
+    logFile.appendText("File exists, loading...\n");
+    DBG("Loading audio file: " + file.getFullPathName());
+    audioProcessor.loadSampleFromFile(file);
+
+    if (audioProcessor.isSampleLoaded())
+    {
+        sampleLabel.setText(file.getFileNameWithoutExtension(), juce::dontSendNotification);
+        sampleLabel.setColour(juce::Label::textColourId, juce::Colour(0xff22c55e));
+        logFile.appendText("SUCCESS: Sample loaded!\n");
+        DBG("Sample loaded successfully!");
+    }
+    else
+    {
+        sampleLabel.setText("Failed to load sample", juce::dontSendNotification);
+        sampleLabel.setColour(juce::Label::textColourId, juce::Colours::red);
+        logFile.appendText("ERROR: Failed to load sample!\n");
+        DBG("Failed to load sample!");
     }
 }
 
