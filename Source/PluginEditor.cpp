@@ -51,10 +51,32 @@ GrainsAudioProcessorEditor::GrainsAudioProcessorEditor (GrainsAudioProcessor& p)
     setupLabel(gainLabel, "Gain");
     gainAttachment.reset(new SliderAttachment(audioProcessor.getAPVTS(), "gain", gainSlider));
 
-    // Set window size
-    setSize (800, 500);
+    // Phase 2 parameters
+    setupSlider(panSpreadSlider, "panSpread");
+    setupLabel(panSpreadLabel, "Pan Spread");
+    panSpreadAttachment.reset(new SliderAttachment(audioProcessor.getAPVTS(), "panSpread", panSpreadSlider));
+
+    setupSlider(pitchSpreadSlider, "pitchSpread");
+    setupLabel(pitchSpreadLabel, "Pitch Spread");
+    pitchSpreadAttachment.reset(new SliderAttachment(audioProcessor.getAPVTS(), "pitchSpread", pitchSpreadSlider));
+
+    // Freeze button
+    freezeButton.setButtonText("Freeze");
+    freezeButton.setColour(juce::ToggleButton::textColourId, juce::Colours::white);
+    freezeButton.setColour(juce::ToggleButton::tickColourId, juce::Colour(0xff22c55e));
+    freezeButton.setColour(juce::ToggleButton::tickDisabledColourId, juce::Colour(0xff2a2a2a));
+    addAndMakeVisible(freezeButton);
+    setupLabel(freezeLabel, "Freeze");
+    freezeAttachment.reset(new ButtonAttachment(audioProcessor.getAPVTS(), "freeze", freezeButton));
+
+    setupSlider(reverseSlider, "reverse");
+    setupLabel(reverseLabel, "Reverse");
+    reverseAttachment.reset(new SliderAttachment(audioProcessor.getAPVTS(), "reverse", reverseSlider));
+
+    // Set window size - larger to fit new controls
+    setSize (1000, 600);
     setResizable(true, true);
-    setResizeLimits(600, 400, 1200, 800);
+    setResizeLimits(800, 500, 1400, 900);
 }
 
 GrainsAudioProcessorEditor::~GrainsAudioProcessorEditor()
@@ -134,6 +156,23 @@ void GrainsAudioProcessorEditor::resized()
 
     gainLabel.setBounds(20 + sliderWidth * 3, row2.getY(), sliderWidth, 20);
     gainSlider.setBounds(20 + sliderWidth * 3, row2.getY() + 25, sliderWidth, 140);
+
+    // Row 3: Phase 2 parameters (Pan Spread, Pitch Spread, Freeze, Reverse)
+    area.removeFromTop(10);  // Spacing
+    auto row3 = area.removeFromTop(180);
+
+    panSpreadLabel.setBounds(20, row3.getY(), sliderWidth, 20);
+    panSpreadSlider.setBounds(20, row3.getY() + 25, sliderWidth, 140);
+
+    pitchSpreadLabel.setBounds(20 + sliderWidth, row3.getY(), sliderWidth, 20);
+    pitchSpreadSlider.setBounds(20 + sliderWidth, row3.getY() + 25, sliderWidth, 140);
+
+    // Freeze toggle button (smaller, centered vertically)
+    freezeLabel.setBounds(20 + sliderWidth * 2, row3.getY(), sliderWidth, 20);
+    freezeButton.setBounds(20 + sliderWidth * 2 + sliderWidth/2 - 30, row3.getY() + 60, 60, 30);
+
+    reverseLabel.setBounds(20 + sliderWidth * 3, row3.getY(), sliderWidth, 20);
+    reverseSlider.setBounds(20 + sliderWidth * 3, row3.getY() + 25, sliderWidth, 140);
 }
 
 //==============================================================================

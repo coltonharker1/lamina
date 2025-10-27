@@ -55,7 +55,11 @@ public:
                  float grainSizeMs,          // 5-500: grain duration in ms
                  float densityGrainsPerSec,  // 1-100: grains per second
                  float pitchSemitones,       // -24 to +24: pitch shift
-                 float panPosition)          // -1 to +1: stereo position
+                 float pitchSpreadSemitones, // 0-24: pitch randomization
+                 float panPosition,          // -1 to +1: stereo position
+                 float panSpreadPercent,     // 0-100: pan randomization
+                 bool freezeMode,            // true: lock position
+                 float reversePercent)       // 0-100: reverse probability
     {
         if (!hasSource())
             return;
@@ -65,12 +69,28 @@ public:
         // Calculate how many samples between grain starts
         double samplesPerGrain = currentSampleRate / densityGrainsPerSec;
 
+        // Store freeze position on first freeze activation
+        if (freezeMode && !wasFrozen)
+        {
+            frozenPosition = position01;
+            wasFrozen = true;
+        }
+        else if (!freezeMode)
+        {
+            wasFrozen = false;
+        }
+
+        // Use frozen position if freeze is active
+        float actualPosition = freezeMode ? frozenPosition : position01;
+
         for (int sample = 0; sample < numSamples; ++sample)
         {
             // Check if it's time to start a new grain
             if (samplesToNextGrain <= 0.0)
             {
-                startNewGrain(position01, sprayPercent, grainSizeMs, pitchSemitones, panPosition);
+                startNewGrain(actualPosition, sprayPercent, grainSizeMs,
+                             pitchSemitones, pitchSpreadSemitones,
+                             panPosition, panSpreadPercent, reversePercent);
                 samplesToNextGrain += samplesPerGrain;
             }
 
@@ -108,7 +128,8 @@ private:
     //==============================================================================
     /** Start a new grain with the given parameters */
     void startNewGrain(float position01, float sprayPercent, float grainSizeMs,
-                       float pitchSemitones, float panPosition)
+                       float pitchSemitones, float pitchSpreadSemitones,
+                       float panPosition, float panSpreadPercent, float reversePercent)
     {
         // Find an inactive voice
         GrainVoice* voice = findFreeVoice();
@@ -121,9 +142,23 @@ private:
         float randomizedPosition = position01 + sprayDist(randomEngine);
         randomizedPosition = juce::jlimit(0.0f, 1.0f, randomizedPosition);
 
+        // Apply pitch randomization
+        std::uniform_real_distribution<float> pitchDist(-pitchSpreadSemitones, pitchSpreadSemitones);
+        float randomizedPitch = pitchSemitones + pitchDist(randomEngine);
+
+        // Apply pan randomization
+        float panSpread01 = panSpreadPercent / 100.0f;
+        std::uniform_real_distribution<float> panDist(-panSpread01, panSpread01);
+        float randomizedPan = panPosition + panDist(randomEngine);
+        randomizedPan = juce::jlimit(-1.0f, 1.0f, randomizedPan);
+
+        // Determine if this grain should be reversed
+        std::uniform_real_distribution<float> reverseDist(0.0f, 100.0f);
+        bool shouldReverse = reverseDist(randomEngine) < reversePercent;
+
         // Start the grain
-        voice->start(*sourceBuffer, randomizedPosition, grainSizeMs, pitchSemitones,
-                     panPosition, currentSampleRate);
+        voice->start(*sourceBuffer, randomizedPosition, grainSizeMs, randomizedPitch,
+                     randomizedPan, shouldReverse, currentSampleRate);
     }
 
     /** Find an inactive grain voice, or steal the oldest one */
@@ -148,4 +183,8 @@ private:
 
     double currentSampleRate = 44100.0;
     double samplesToNextGrain = 0.0;
+
+    // Freeze mode state
+    bool wasFrozen = false;
+    float frozenPosition = 0.5f;
 };

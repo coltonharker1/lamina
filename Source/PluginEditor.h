@@ -65,8 +65,23 @@ private:
     juce::Slider gainSlider;
     juce::Label gainLabel;
 
+    // Phase 2 controls
+    juce::Slider panSpreadSlider;
+    juce::Label panSpreadLabel;
+
+    juce::Slider pitchSpreadSlider;
+    juce::Label pitchSpreadLabel;
+
+    juce::ToggleButton freezeButton;
+    juce::Label freezeLabel;
+
+    juce::Slider reverseSlider;
+    juce::Label reverseLabel;
+
     // Parameter attachments
     using SliderAttachment = juce::AudioProcessorValueTreeState::SliderAttachment;
+    using ButtonAttachment = juce::AudioProcessorValueTreeState::ButtonAttachment;
+
     std::unique_ptr<SliderAttachment> positionAttachment;
     std::unique_ptr<SliderAttachment> sprayAttachment;
     std::unique_ptr<SliderAttachment> grainSizeAttachment;
@@ -75,6 +90,12 @@ private:
     std::unique_ptr<SliderAttachment> panAttachment;
     std::unique_ptr<SliderAttachment> dryWetAttachment;
     std::unique_ptr<SliderAttachment> gainAttachment;
+
+    // Phase 2 attachments
+    std::unique_ptr<SliderAttachment> panSpreadAttachment;
+    std::unique_ptr<SliderAttachment> pitchSpreadAttachment;
+    std::unique_ptr<ButtonAttachment> freezeAttachment;
+    std::unique_ptr<SliderAttachment> reverseAttachment;
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (GrainsAudioProcessorEditor)
 };

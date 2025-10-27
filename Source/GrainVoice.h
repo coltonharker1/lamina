@@ -27,6 +27,7 @@ public:
                float durationMs,            // Duration in milliseconds
                float pitchSemitones,        // Pitch shift in semitones
                float panPosition,           // -1 to +1: left to right
+               bool shouldReverse,          // Play grain in reverse
                double sampleRate)
     {
         isActive = true;
@@ -42,6 +43,10 @@ public:
         // Convert semitones to playback rate
         // Formula: rate = 2^(semitones/12)
         playbackRate = std::pow(2.0, pitchSemitones / 12.0);
+
+        // Reverse playback flips the direction
+        if (shouldReverse)
+            playbackRate = -playbackRate;
 
         // Store pan (-1 = left, 0 = center, +1 = right)
         pan = juce::jlimit(-1.0f, 1.0f, panPosition);

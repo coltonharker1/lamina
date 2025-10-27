@@ -14,6 +14,12 @@ namespace ParameterIDs
     const juce::String pan { "pan" };
     const juce::String dryWet { "dryWet" };
     const juce::String gain { "gain" };
+
+    // Phase 2 parameters
+    const juce::String panSpread { "panSpread" };
+    const juce::String pitchSpread { "pitchSpread" };
+    const juce::String freeze { "freeze" };
+    const juce::String reverse { "reverse" };
 }
 
 //==============================================================================
@@ -110,6 +116,40 @@ juce::AudioProcessorValueTreeState::ParameterLayout GrainsAudioProcessor::create
         "Gain",
         juce::NormalisableRange<float>(0.0f, 200.0f, 0.1f),
         100.0f,  // Default: 100% (unity gain)
+        "%"
+    ));
+
+    // Pan Spread: Random deviation from pan position (0-100%)
+    layout.add(std::make_unique<juce::AudioParameterFloat>(
+        ParameterIDs::panSpread,
+        "Pan Spread",
+        juce::NormalisableRange<float>(0.0f, 100.0f, 0.1f),
+        0.0f,  // Default: no randomization
+        "%"
+    ));
+
+    // Pitch Spread: Random deviation from pitch (0-24 semitones)
+    layout.add(std::make_unique<juce::AudioParameterFloat>(
+        ParameterIDs::pitchSpread,
+        "Pitch Spread",
+        juce::NormalisableRange<float>(0.0f, 24.0f, 0.1f),
+        0.0f,  // Default: no randomization
+        " st"
+    ));
+
+    // Freeze: Lock position for infinite grain generation
+    layout.add(std::make_unique<juce::AudioParameterBool>(
+        ParameterIDs::freeze,
+        "Freeze",
+        false  // Default: off
+    ));
+
+    // Reverse: Probability of playing grains in reverse (0-100%)
+    layout.add(std::make_unique<juce::AudioParameterFloat>(
+        ParameterIDs::reverse,
+        "Reverse",
+        juce::NormalisableRange<float>(0.0f, 100.0f, 0.1f),
+        0.0f,  // Default: no reverse grains
         "%"
     ));
 
@@ -248,6 +288,12 @@ void GrainsAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce:
     float dryWet = apvts.getRawParameterValue(ParameterIDs::dryWet)->load() / 100.0f;  // Convert to 0..1
     float gain = apvts.getRawParameterValue(ParameterIDs::gain)->load() / 100.0f;  // Convert to multiplier
 
+    // Phase 2 parameters
+    float panSpread = apvts.getRawParameterValue(ParameterIDs::panSpread)->load();
+    float pitchSpread = apvts.getRawParameterValue(ParameterIDs::pitchSpread)->load();
+    bool freeze = apvts.getRawParameterValue(ParameterIDs::freeze)->load() > 0.5f;
+    float reverse = apvts.getRawParameterValue(ParameterIDs::reverse)->load();
+
     // Store dry signal for dry/wet mix
     juce::AudioBuffer<float> dryBuffer;
     dryBuffer.makeCopyOf(buffer);
@@ -255,8 +301,9 @@ void GrainsAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce:
     // Clear buffer before generating grains
     buffer.clear();
 
-    // Generate grains
-    grainEngine.process(buffer, position / 100.0f, spray, grainSize, density, pitch, pan);
+    // Generate grains with Phase 2 parameters
+    grainEngine.process(buffer, position / 100.0f, spray, grainSize, density,
+                       pitch, pitchSpread, pan, panSpread, freeze, reverse);
 
     // Apply gain
     buffer.applyGain(gain);
