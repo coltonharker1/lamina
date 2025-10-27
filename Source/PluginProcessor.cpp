@@ -12,7 +12,6 @@ namespace ParameterIDs
     const juce::String density { "density" };
     const juce::String pitch { "pitch" };
     const juce::String pan { "pan" };
-    const juce::String dryWet { "dryWet" };
     const juce::String gain { "gain" };
 
     // Phase 2 parameters
@@ -99,15 +98,6 @@ juce::AudioProcessorValueTreeState::ParameterLayout GrainsAudioProcessor::create
         juce::NormalisableRange<float>(-100.0f, 100.0f, 1.0f),
         0.0f,  // Default: center
         ""
-    ));
-
-    // Dry/Wet: Mix between dry signal and grains (0-100%)
-    layout.add(std::make_unique<juce::AudioParameterFloat>(
-        ParameterIDs::dryWet,
-        "Dry/Wet",
-        juce::NormalisableRange<float>(0.0f, 100.0f, 0.1f),
-        100.0f,  // Default: 100% wet
-        "%"
     ));
 
     // Gain: Output level (0-200%)

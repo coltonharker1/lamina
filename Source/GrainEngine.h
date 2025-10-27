@@ -54,18 +54,32 @@ public:
     {
         juce::ignoreUnused(velocity);  // Could use for volume control later
         activeNotes.insert(midiNote);
+
+        // Set the current note for pitch tracking
+        if (activeNotes.size() == 1)
+            currentMidiNote = midiNote;
     }
 
     /** Note off - stop playing grains */
     void noteOff(int midiNote)
     {
         activeNotes.erase(midiNote);
+
+        // Update current note if we still have active notes
+        if (!activeNotes.empty())
+            currentMidiNote = *activeNotes.begin();  // Use lowest note
     }
 
     /** Check if any notes are active */
     bool hasActiveNotes() const
     {
         return !activeNotes.empty();
+    }
+
+    /** Get pitch offset in semitones from MIDI note (C4 = 60 = no offset) */
+    float getMidiPitchOffset() const
+    {
+        return static_cast<float>(currentMidiNote - 60);  // C4 (middle C) as reference
     }
 
     //==============================================================================
@@ -112,8 +126,11 @@ public:
                 // Check if it's time to start a new grain
                 if (samplesToNextGrain <= 0.0)
                 {
+                    // Add MIDI note pitch offset to the base pitch parameter
+                    float totalPitch = pitchSemitones + getMidiPitchOffset();
+
                     startNewGrain(actualPosition, sprayPercent, grainSizeMs,
-                                 pitchSemitones, pitchSpreadSemitones,
+                                 totalPitch, pitchSpreadSemitones,
                                  panPosition, panSpreadPercent, reversePercent);
                     samplesToNextGrain += samplesPerGrain;
                 }
@@ -215,4 +232,5 @@ private:
 
     // MIDI note tracking
     std::set<int> activeNotes;
+    int currentMidiNote = 60;  // Middle C as default
 };

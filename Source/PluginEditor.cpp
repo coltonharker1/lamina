@@ -49,10 +49,6 @@ GrainsAudioProcessorEditor::GrainsAudioProcessorEditor (GrainsAudioProcessor& p)
     setupLabel(panLabel, "Pan");
     panAttachment.reset(new SliderAttachment(audioProcessor.getAPVTS(), "pan", panSlider));
 
-    setupSlider(dryWetSlider, "dryWet");
-    setupLabel(dryWetLabel, "Dry/Wet");
-    dryWetAttachment.reset(new SliderAttachment(audioProcessor.getAPVTS(), "dryWet", dryWetSlider));
-
     setupSlider(gainSlider, "gain");
     setupLabel(gainLabel, "Gain");
     gainAttachment.reset(new SliderAttachment(audioProcessor.getAPVTS(), "gain", gainSlider));
@@ -132,54 +128,53 @@ void GrainsAudioProcessorEditor::resized()
     // Sliders section - 2 rows of 4
     area.removeFromTop(10);  // Spacing
 
-    // Row 1: Position, Spray, Grain Size, Density
-    auto row1 = area.removeFromTop(180);
     int sliderWidth = (getWidth() - 60) / 4;
+    int knobSize = 90;
+
+    // Row 1: Position, Spray, Grain Size, Density
+    auto row1 = area.removeFromTop(120);  // Smaller height for knobs
 
     positionLabel.setBounds(20, row1.getY(), sliderWidth, 20);
-    positionSlider.setBounds(20, row1.getY() + 25, sliderWidth, 140);
+    positionSlider.setBounds(20 + (sliderWidth - knobSize) / 2, row1.getY() + 20, knobSize, knobSize);
 
     sprayLabel.setBounds(20 + sliderWidth, row1.getY(), sliderWidth, 20);
-    spraySlider.setBounds(20 + sliderWidth, row1.getY() + 25, sliderWidth, 140);
+    spraySlider.setBounds(20 + sliderWidth + (sliderWidth - knobSize) / 2, row1.getY() + 20, knobSize, knobSize);
 
     grainSizeLabel.setBounds(20 + sliderWidth * 2, row1.getY(), sliderWidth, 20);
-    grainSizeSlider.setBounds(20 + sliderWidth * 2, row1.getY() + 25, sliderWidth, 140);
+    grainSizeSlider.setBounds(20 + sliderWidth * 2 + (sliderWidth - knobSize) / 2, row1.getY() + 20, knobSize, knobSize);
 
     densityLabel.setBounds(20 + sliderWidth * 3, row1.getY(), sliderWidth, 20);
-    densitySlider.setBounds(20 + sliderWidth * 3, row1.getY() + 25, sliderWidth, 140);
+    densitySlider.setBounds(20 + sliderWidth * 3 + (sliderWidth - knobSize) / 2, row1.getY() + 20, knobSize, knobSize);
 
-    // Row 2: Pitch, Pan, Dry/Wet, Gain
+    // Row 2: Pitch, Pan, Gain, (one slot empty for now)
     area.removeFromTop(10);  // Spacing
-    auto row2 = area.removeFromTop(180);
+    auto row2 = area.removeFromTop(120);  // Smaller height for knobs
 
     pitchLabel.setBounds(20, row2.getY(), sliderWidth, 20);
-    pitchSlider.setBounds(20, row2.getY() + 25, sliderWidth, 140);
+    pitchSlider.setBounds(20 + (sliderWidth - knobSize) / 2, row2.getY() + 20, knobSize, knobSize);
 
     panLabel.setBounds(20 + sliderWidth, row2.getY(), sliderWidth, 20);
-    panSlider.setBounds(20 + sliderWidth, row2.getY() + 25, sliderWidth, 140);
+    panSlider.setBounds(20 + sliderWidth + (sliderWidth - knobSize) / 2, row2.getY() + 20, knobSize, knobSize);
 
-    dryWetLabel.setBounds(20 + sliderWidth * 2, row2.getY(), sliderWidth, 20);
-    dryWetSlider.setBounds(20 + sliderWidth * 2, row2.getY() + 25, sliderWidth, 140);
-
-    gainLabel.setBounds(20 + sliderWidth * 3, row2.getY(), sliderWidth, 20);
-    gainSlider.setBounds(20 + sliderWidth * 3, row2.getY() + 25, sliderWidth, 140);
+    gainLabel.setBounds(20 + sliderWidth * 2, row2.getY(), sliderWidth, 20);
+    gainSlider.setBounds(20 + sliderWidth * 2 + (sliderWidth - knobSize) / 2, row2.getY() + 20, knobSize, knobSize);
 
     // Row 3: Phase 2 parameters (Pan Spread, Pitch Spread, Freeze, Reverse)
     area.removeFromTop(10);  // Spacing
-    auto row3 = area.removeFromTop(180);
+    auto row3 = area.removeFromTop(120);
 
     panSpreadLabel.setBounds(20, row3.getY(), sliderWidth, 20);
-    panSpreadSlider.setBounds(20, row3.getY() + 25, sliderWidth, 140);
+    panSpreadSlider.setBounds(20 + (sliderWidth - knobSize) / 2, row3.getY() + 20, knobSize, knobSize);
 
     pitchSpreadLabel.setBounds(20 + sliderWidth, row3.getY(), sliderWidth, 20);
-    pitchSpreadSlider.setBounds(20 + sliderWidth, row3.getY() + 25, sliderWidth, 140);
+    pitchSpreadSlider.setBounds(20 + sliderWidth + (sliderWidth - knobSize) / 2, row3.getY() + 20, knobSize, knobSize);
 
-    // Freeze toggle button (smaller, centered vertically)
+    // Freeze toggle button (centered)
     freezeLabel.setBounds(20 + sliderWidth * 2, row3.getY(), sliderWidth, 20);
-    freezeButton.setBounds(20 + sliderWidth * 2 + sliderWidth/2 - 30, row3.getY() + 60, 60, 30);
+    freezeButton.setBounds(20 + sliderWidth * 2 + sliderWidth/2 - 30, row3.getY() + 50, 60, 30);
 
     reverseLabel.setBounds(20 + sliderWidth * 3, row3.getY(), sliderWidth, 20);
-    reverseSlider.setBounds(20 + sliderWidth * 3, row3.getY() + 25, sliderWidth, 140);
+    reverseSlider.setBounds(20 + sliderWidth * 3 + (sliderWidth - knobSize) / 2, row3.getY() + 20, knobSize, knobSize);
 }
 
 //==============================================================================
@@ -301,11 +296,12 @@ void GrainsAudioProcessorEditor::loadAudioFile (const juce::File& file)
 //==============================================================================
 void GrainsAudioProcessorEditor::setupSlider (juce::Slider& slider, const juce::String& paramID)
 {
-    slider.setSliderStyle(juce::Slider::LinearVertical);
-    slider.setTextBoxStyle(juce::Slider::TextBoxBelow, false, 80, 20);
+    // Use rotary knobs instead of vertical sliders
+    slider.setSliderStyle(juce::Slider::RotaryHorizontalVerticalDrag);
+    slider.setTextBoxStyle(juce::Slider::TextBoxBelow, false, 70, 18);
+    slider.setColour(juce::Slider::rotarySliderFillColourId, juce::Colour(0xff22c55e));
+    slider.setColour(juce::Slider::rotarySliderOutlineColourId, juce::Colour(0xff2a2a2a));
     slider.setColour(juce::Slider::thumbColourId, juce::Colour(0xff22c55e));
-    slider.setColour(juce::Slider::trackColourId, juce::Colour(0xff2a2a2a));
-    slider.setColour(juce::Slider::backgroundColourId, juce::Colour(0xff1a1a1a));
     slider.setColour(juce::Slider::textBoxTextColourId, juce::Colours::white);
     slider.setColour(juce::Slider::textBoxBackgroundColourId, juce::Colour(0xff1a1a1a));
     slider.setColour(juce::Slider::textBoxOutlineColourId, juce::Colour(0xff2a2a2a));

@@ -65,9 +65,6 @@ private:
     juce::Slider panSlider;
     juce::Label panLabel;
 
-    juce::Slider dryWetSlider;
-    juce::Label dryWetLabel;
-
     juce::Slider gainSlider;
     juce::Label gainLabel;
 
@@ -94,7 +91,6 @@ private:
     std::unique_ptr<SliderAttachment> densityAttachment;
     std::unique_ptr<SliderAttachment> pitchAttachment;
     std::unique_ptr<SliderAttachment> panAttachment;
-    std::unique_ptr<SliderAttachment> dryWetAttachment;
     std::unique_ptr<SliderAttachment> gainAttachment;
 
     // Phase 2 attachments
