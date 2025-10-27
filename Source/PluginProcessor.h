@@ -1,6 +1,7 @@
 #pragma once
 
 #include <juce_audio_processors/juce_audio_processors.h>
+#include "GrainEngine.h"
 
 //==============================================================================
 /**
@@ -52,10 +53,17 @@ public:
     juce::AudioProcessorValueTreeState& getAPVTS() { return apvts; }
     static juce::AudioProcessorValueTreeState::ParameterLayout createParameterLayout();
 
+    // Sample loading (public for UI access)
+    void loadSampleFromFile(const juce::File& file);
+    bool isSampleLoaded() const { return sampleLoaded.load(); }
+
 private:
     //==============================================================================
     // Parameter management
     juce::AudioProcessorValueTreeState apvts;
+
+    // Granular synthesis engine
+    GrainEngine grainEngine;
 
     // Audio sample buffer
     juce::AudioBuffer<float> sampleBuffer;

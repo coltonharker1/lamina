@@ -1,5 +1,6 @@
 #include "PluginProcessor.h"
 #include "PluginEditor.h"
+#include <juce_audio_formats/juce_audio_formats.h>
 
 //==============================================================================
 // Parameter IDs
@@ -182,8 +183,13 @@ void GrainsAudioProcessor::prepareToPlay (double sampleRate, int samplesPerBlock
 {
     currentSampleRate = sampleRate;
 
-    // TODO: Initialize grain engine here
-    // grainEngine.prepare(sampleRate, samplesPerBlock);
+    // Initialize grain engine
+    grainEngine.prepare(sampleRate, samplesPerBlock);
+
+    if (sampleLoaded.load())
+    {
+        grainEngine.setSourceBuffer(sampleBuffer);
+    }
 }
 
 void GrainsAudioProcessor::releaseResources()
@@ -219,24 +225,52 @@ bool GrainsAudioProcessor::isBusesLayoutSupported (const BusesLayout& layouts) c
 void GrainsAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::MidiBuffer& midiMessages)
 {
     juce::ScopedNoDenormals noDenormals;
+    juce::ignoreUnused(midiMessages);
+
     auto totalNumInputChannels  = getTotalNumInputChannels();
     auto totalNumOutputChannels = getTotalNumOutputChannels();
 
-    // In case we have more outputs than inputs, this code clears any output
-    // channels that didn't contain input data, (because these aren't
-    // guaranteed to be empty - they may contain garbage).
+    // Clear output channels
     for (auto i = totalNumInputChannels; i < totalNumOutputChannels; ++i)
         buffer.clear (i, 0, buffer.getNumSamples());
 
-    // This is the place where you'd normally do the guts of your plugin's
-    // audio processing...
-    // For now, just pass audio through unchanged (bypass mode)
-    for (int channel = 0; channel < totalNumInputChannels; ++channel)
-    {
-        auto* channelData = buffer.getWritePointer (channel);
+    // If no sample is loaded, pass audio through unchanged (bypass mode)
+    if (!sampleLoaded.load())
+        return;
 
-        // ..do something to the data...
-        // (Currently just passing through unchanged)
+    // Get parameter values
+    float position = apvts.getRawParameterValue(ParameterIDs::position)->load();
+    float spray = apvts.getRawParameterValue(ParameterIDs::spray)->load();
+    float grainSize = apvts.getRawParameterValue(ParameterIDs::grainSize)->load();
+    float density = apvts.getRawParameterValue(ParameterIDs::density)->load();
+    float pitch = apvts.getRawParameterValue(ParameterIDs::pitch)->load();
+    float pan = apvts.getRawParameterValue(ParameterIDs::pan)->load() / 100.0f;  // Convert to -1..1
+    float dryWet = apvts.getRawParameterValue(ParameterIDs::dryWet)->load() / 100.0f;  // Convert to 0..1
+    float gain = apvts.getRawParameterValue(ParameterIDs::gain)->load() / 100.0f;  // Convert to multiplier
+
+    // Store dry signal for dry/wet mix
+    juce::AudioBuffer<float> dryBuffer;
+    dryBuffer.makeCopyOf(buffer);
+
+    // Clear buffer before generating grains
+    buffer.clear();
+
+    // Generate grains
+    grainEngine.process(buffer, position / 100.0f, spray, grainSize, density, pitch, pan);
+
+    // Apply gain
+    buffer.applyGain(gain);
+
+    // Mix dry and wet
+    for (int channel = 0; channel < totalNumOutputChannels; ++channel)
+    {
+        auto* wetData = buffer.getWritePointer(channel);
+        const auto* dryData = dryBuffer.getReadPointer(juce::jmin(channel, dryBuffer.getNumChannels() - 1));
+
+        for (int sample = 0; sample < buffer.getNumSamples(); ++sample)
+        {
+            wetData[sample] = wetData[sample] * dryWet + dryData[sample] * (1.0f - dryWet);
+        }
     }
 }
 
@@ -268,6 +302,45 @@ void GrainsAudioProcessor::setStateInformation (const void* data, int sizeInByte
     if (xmlState.get() != nullptr)
         if (xmlState->hasTagName (apvts.state.getType()))
             apvts.replaceState (juce::ValueTree::fromXml (*xmlState));
+}
+
+//==============================================================================
+void GrainsAudioProcessor::loadSampleFromFile(const juce::File& file)
+{
+    // Create audio format manager
+    juce::AudioFormatManager formatManager;
+    formatManager.registerBasicFormats();
+
+    // Try to read the file
+    std::unique_ptr<juce::AudioFormatReader> reader(formatManager.createReaderFor(file));
+
+    if (reader != nullptr)
+    {
+        // Resize sample buffer
+        sampleBuffer.setSize(reader->numChannels, static_cast<int>(reader->lengthInSamples));
+
+        // Read audio data
+        reader->read(&sampleBuffer, 0, static_cast<int>(reader->lengthInSamples), 0, true, true);
+
+        // If stereo, convert to mono by averaging channels
+        if (sampleBuffer.getNumChannels() > 1)
+        {
+            sampleBuffer.addFrom(0, 0, sampleBuffer, 1, 0, sampleBuffer.getNumSamples(), 0.5f);
+            sampleBuffer.applyGain(0, 0, sampleBuffer.getNumSamples(), 0.5f);
+            sampleBuffer.setSize(1, sampleBuffer.getNumSamples(), true, false, false);
+        }
+
+        // Update grain engine
+        grainEngine.setSourceBuffer(sampleBuffer);
+        sampleLoaded.store(true);
+
+        DBG("Loaded sample: " + file.getFileName() + " (" +
+            juce::String(sampleBuffer.getNumSamples()) + " samples)");
+    }
+    else
+    {
+        DBG("Failed to load sample: " + file.getFileName());
+    }
 }
 
 //==============================================================================

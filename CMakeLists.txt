@@ -29,7 +29,9 @@ juce_add_plugin(GrainsVST
 target_sources(GrainsVST
     PRIVATE
         Source/PluginProcessor.cpp
-        Source/PluginEditor.cpp)
+        Source/PluginEditor.cpp
+        Source/GrainVoice.h
+        Source/GrainEngine.h)
 
 # Link JUCE modules
 target_link_libraries(GrainsVST
