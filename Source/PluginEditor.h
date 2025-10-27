@@ -8,7 +8,9 @@
 /**
  * Grains VST - Plugin Editor (UI)
  */
-class GrainsAudioProcessorEditor  : public juce::AudioProcessorEditor
+class GrainsAudioProcessorEditor  : public juce::AudioProcessorEditor,
+                                     private juce::Slider::Listener,
+                                     private juce::Button::Listener
 {
 public:
     GrainsAudioProcessorEditor (GrainsAudioProcessor&);
@@ -19,9 +21,60 @@ public:
     void resized() override;
 
 private:
-    // This reference is provided as a quick way for your editor to
-    // access the processor object that created it.
+    //==============================================================================
+    // Slider listener
+    void sliderValueChanged (juce::Slider* slider) override;
+
+    // Button listener
+    void buttonClicked (juce::Button* button) override;
+
+    //==============================================================================
+    // Helper to create a styled slider
+    void setupSlider (juce::Slider& slider, const juce::String& paramID);
+    void setupLabel (juce::Label& label, const juce::String& text);
+
+    //==============================================================================
     GrainsAudioProcessor& audioProcessor;
+
+    // UI Components
+    juce::TextButton loadSampleButton;
+    juce::Label sampleLabel;
+
+    // Parameter sliders
+    juce::Slider positionSlider;
+    juce::Label positionLabel;
+
+    juce::Slider spraySlider;
+    juce::Label sprayLabel;
+
+    juce::Slider grainSizeSlider;
+    juce::Label grainSizeLabel;
+
+    juce::Slider densitySlider;
+    juce::Label densityLabel;
+
+    juce::Slider pitchSlider;
+    juce::Label pitchLabel;
+
+    juce::Slider panSlider;
+    juce::Label panLabel;
+
+    juce::Slider dryWetSlider;
+    juce::Label dryWetLabel;
+
+    juce::Slider gainSlider;
+    juce::Label gainLabel;
+
+    // Parameter attachments
+    using SliderAttachment = juce::AudioProcessorValueTreeState::SliderAttachment;
+    std::unique_ptr<SliderAttachment> positionAttachment;
+    std::unique_ptr<SliderAttachment> sprayAttachment;
+    std::unique_ptr<SliderAttachment> grainSizeAttachment;
+    std::unique_ptr<SliderAttachment> densityAttachment;
+    std::unique_ptr<SliderAttachment> pitchAttachment;
+    std::unique_ptr<SliderAttachment> panAttachment;
+    std::unique_ptr<SliderAttachment> dryWetAttachment;
+    std::unique_ptr<SliderAttachment> gainAttachment;
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (GrainsAudioProcessorEditor)
 };
