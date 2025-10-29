@@ -13,17 +13,18 @@ add_subdirectory(/Users/colton/Downloads/JUCE ${CMAKE_CURRENT_BINARY_DIR}/JUCE)
 
 # Plugin configuration
 juce_add_plugin(GrainsVST
-    COMPANY_NAME "YourCompany"                    # Change this later
+    COMPANY_NAME "Project Sonaris"
+    BUNDLE_ID "com.projectsonaris.somnia"
     IS_SYNTH TRUE                                 # MIDI instrument/synth
     NEEDS_MIDI_INPUT TRUE                         # Accepts MIDI notes
     NEEDS_MIDI_OUTPUT FALSE
     IS_MIDI_EFFECT FALSE
     EDITOR_WANTS_KEYBOARD_FOCUS FALSE
     COPY_PLUGIN_AFTER_BUILD TRUE                  # Automatically install to system
-    PLUGIN_MANUFACTURER_CODE Manu                 # Change to your 4-char code
-    PLUGIN_CODE Grns                              # 4-char plugin identifier
+    PLUGIN_MANUFACTURER_CODE PjSn                 # Project Sonaris 4-char code
+    PLUGIN_CODE Somn                              # Somnia 4-char identifier
     FORMATS VST3 AU                               # Build VST3 and AU (macOS)
-    PRODUCT_NAME "Grains")                        # Display name in DAW
+    PRODUCT_NAME "Somnia")                        # Display name in DAW
 
 # Source files
 target_sources(GrainsVST
@@ -31,7 +32,10 @@ target_sources(GrainsVST
         Source/PluginProcessor.cpp
         Source/PluginEditor.cpp
         Source/GrainVoice.h
-        Source/GrainEngine.h)
+        Source/GrainEngine.h
+        Source/LFO.h
+        Source/Envelope.h
+        Source/UnifiedVisualization.h)
 
 # Link JUCE modules
 target_link_libraries(GrainsVST
@@ -59,3 +63,19 @@ target_compile_definitions(GrainsVST
         JUCE_WEB_BROWSER=0
         JUCE_USE_CURL=0
         JUCE_VST3_CAN_REPLACE_VST2=0)
+
+# Performance optimizations (safe flags that don't break JUCE)
+if(CMAKE_CXX_COMPILER_ID MATCHES "Clang" OR CMAKE_CXX_COMPILER_ID MATCHES "GNU")
+    target_compile_options(GrainsVST PRIVATE
+        -O3                      # Maximum optimization
+        -funroll-loops          # Unroll loops for better performance
+        -fvectorize             # Enable auto-vectorization
+        -march=native           # Optimize for the current CPU
+        -fno-math-errno         # Don't set errno for math functions (faster)
+    )
+elseif(MSVC)
+    target_compile_options(GrainsVST PRIVATE
+        /O2                      # Maximum optimization
+        /arch:AVX2              # Use AVX2 instructions if available
+    )
+endif()
