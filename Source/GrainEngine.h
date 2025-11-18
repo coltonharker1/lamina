@@ -37,6 +37,7 @@ public:
         pitchDistribution = std::uniform_real_distribution<float>(-1.0f, 1.0f);
         panDistribution = std::uniform_real_distribution<float>(-1.0f, 1.0f);
         reverseDistribution = std::uniform_real_distribution<float>(0.0f, 100.0f);
+        octaveDistribution = std::uniform_real_distribution<float>(0.0f, 100.0f);
     }
 
     //==============================================================================
@@ -147,7 +148,9 @@ public:
                  bool freezeMode,            // true: lock position
                  float reversePercent,       // 0-100: reverse probability
                  float timeStretch,          // 0.25-4: time stretch multiplier
-                 int grainShape)             // 0-4: grain envelope shape
+                 int grainShape,             // 0-4: grain envelope shape
+                 float octaveSpread,         // 0-2: octave shift range
+                 float octaveProbability)    // 0-100: probability of octave shift
     {
         if (!hasSource())
             return;
@@ -226,7 +229,7 @@ public:
                                 startNewGrain(actualPosition, sprayPercent, grainSizeMs,
                                              totalPitch, pitchSpreadSemitones,
                                              panPosition, panSpreadPercent, reversePercent,
-                                             timeStretch, grainShape, midiNote);
+                                             timeStretch, grainShape, octaveSpread, octaveProbability, midiNote);
                             }
                         }
                     }
@@ -330,7 +333,8 @@ private:
     void startNewGrain(float position01, float sprayPercent, float grainSizeMs,
                        float pitchSemitones, float pitchSpreadSemitones,
                        float panPosition, float panSpreadPercent, float reversePercent,
-                       float timeStretch, int grainShape, int midiNote = -1)
+                       float timeStretch, int grainShape,
+                       float octaveSpread, float octaveProbability, int midiNote = -1)
     {
         // Find an inactive voice
         GrainVoice* voice = findFreeVoice();
@@ -343,8 +347,23 @@ private:
             position01 + spray01 * sprayDistribution(randomEngine));
 
         // Apply pitch randomization
-        const float randomizedPitch = pitchSemitones +
+        float randomizedPitch = pitchSemitones +
             pitchSpreadSemitones * pitchDistribution(randomEngine);
+
+        // Apply octave randomization (with probability)
+        if (octaveProbability > 0.0f && octaveSpread > 0.0f)
+        {
+            float octaveRoll = octaveDistribution(randomEngine);  // 0-100
+            if (octaveRoll < octaveProbability)
+            {
+                // Random octave shift: -octaveSpread to +octaveSpread octaves
+                float octaveShift = (octaveDistribution(randomEngine) / 100.0f * 2.0f - 1.0f) * octaveSpread;
+                // Round to nearest integer octave
+                int octaves = static_cast<int>(std::round(octaveShift));
+                // Convert to semitones (1 octave = 12 semitones)
+                randomizedPitch += octaves * 12.0f;
+            }
+        }
 
         // Apply pan randomization
         const float panSpread01 = panSpreadPercent * 0.01f;
@@ -400,6 +419,7 @@ private:
     std::uniform_real_distribution<float> pitchDistribution;
     std::uniform_real_distribution<float> panDistribution;
     std::uniform_real_distribution<float> reverseDistribution;
+    std::uniform_real_distribution<float> octaveDistribution;
 
     double currentSampleRate = 44100.0;
     double samplesToNextGrain = 0.0;

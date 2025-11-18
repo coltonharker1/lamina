@@ -3,6 +3,7 @@
 #include <juce_audio_processors/juce_audio_processors.h>
 #include "GrainEngine.h"
 #include "LFO.h"
+#include "Filter.h"
 
 //==============================================================================
 /**
@@ -92,6 +93,9 @@ private:
     // Modulation system
     std::array<LFO, 4> lfos;  // 4 independent LFOs
     ModulatedValues modulatedValues;  // Store modulated values for UI feedback
+
+    // Filter
+    Filter filter;
 
     // Audio sample buffer
     juce::AudioBuffer<float> sampleBuffer;

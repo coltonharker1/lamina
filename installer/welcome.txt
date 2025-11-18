@@ -1,0 +1,15 @@
+Welcome to Somnia v1.0
+
+Somnia is a professional grain synthesis instrument for music production.
+
+This installer will install:
+• Audio Unit (AU) for Logic Pro, GarageBand
+• VST3 for Ableton Live, FL Studio, and other DAWs
+
+Installation locations:
+• /Library/Audio/Plug-Ins/Components/Somnia.component
+• /Library/Audio/Plug-Ins/VST3/Somnia.vst3
+
+After installation, restart your DAW or rescan plugins.
+
+Project Sonaris © 2024

@@ -35,7 +35,10 @@ target_sources(GrainsVST
         Source/GrainEngine.h
         Source/LFO.h
         Source/Envelope.h
-        Source/UnifiedVisualization.h)
+        Source/Filter.h
+        Source/UnifiedVisualization.h
+        Source/InteractiveADSREnvelope.h
+        Source/ModulatedSlider.h)
 
 # Link JUCE modules
 target_link_libraries(GrainsVST
@@ -48,6 +51,7 @@ target_link_libraries(GrainsVST
         juce::juce_audio_utils
         juce::juce_core
         juce::juce_data_structures
+        juce::juce_dsp
         juce::juce_events
         juce::juce_graphics
         juce::juce_gui_basics

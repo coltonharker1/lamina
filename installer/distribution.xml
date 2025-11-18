@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="utf-8"?>
+<installer-gui-script minSpecVersion="1">
+    <title>Somnia v1.0</title>
+    <organization>com.projectsonaris</organization>
+    <welcome file="welcome.txt"/>
+    <options customize="never" require-scripts="false" hostArchitectures="arm64,x86_64"/>
+    <domains enable_localSystem="true"/>
+
+    <choices-outline>
+        <line choice="default">
+            <line choice="com.projectsonaris.somnia"/>
+        </line>
+    </choices-outline>
+
+    <choice id="default"/>
+    <choice id="com.projectsonaris.somnia" visible="false">
+        <pkg-ref id="com.projectsonaris.somnia"/>
+    </choice>
+
+    <pkg-ref id="com.projectsonaris.somnia" version="1.0" onConclusion="none">Somnia-component.pkg</pkg-ref>
+</installer-gui-script>

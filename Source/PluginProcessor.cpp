@@ -39,6 +39,20 @@ namespace ParameterIDs
     const juce::String envDecay { "envDecay" };
     const juce::String envSustain { "envSustain" };
     const juce::String envRelease { "envRelease" };
+
+    // Filter parameters - Low Pass
+    const juce::String lpFilterEnabled { "lpFilterEnabled" };
+    const juce::String lpFilterCutoff { "lpFilterCutoff" };
+    const juce::String lpFilterResonance { "lpFilterResonance" };
+
+    // Filter parameters - High Pass
+    const juce::String hpFilterEnabled { "hpFilterEnabled" };
+    const juce::String hpFilterCutoff { "hpFilterCutoff" };
+    const juce::String hpFilterResonance { "hpFilterResonance" };
+
+    // Octave randomization parameters
+    const juce::String octaveSpread { "octaveSpread" };
+    const juce::String octaveProbability { "octaveProbability" };
 }
 
 //==============================================================================
@@ -157,7 +171,7 @@ juce::AudioProcessorValueTreeState::ParameterLayout GrainsAudioProcessor::create
         ParameterIDs::reverseProbability,
         "Reverse Probability",
         juce::NormalisableRange<float>(0.0f, 100.0f, 0.1f),
-        100.0f,  // Default: 100% (all grains reversed when enabled)
+        0.0f,  // Default: 0% (no reverse grains, user can increase to add)
         "%"
     ));
 
@@ -290,6 +304,74 @@ juce::AudioProcessorValueTreeState::ParameterLayout GrainsAudioProcessor::create
         "ms"
     ));
 
+    // Low-pass filter enabled (always on, transparent at max cutoff)
+    layout.add(std::make_unique<juce::AudioParameterBool>(
+        ParameterIDs::lpFilterEnabled,
+        "LP Filter Enabled",
+        true  // Default: on (transparent at max cutoff)
+    ));
+
+    // Low-pass filter cutoff: 20Hz - 20kHz
+    layout.add(std::make_unique<juce::AudioParameterFloat>(
+        ParameterIDs::lpFilterCutoff,
+        "LP Filter Cutoff",
+        juce::NormalisableRange<float>(20.0f, 20000.0f, 1.0f, 0.3f),  // Skewed toward lower frequencies
+        20000.0f,  // Default: 20kHz (maximum - transparent, passes all frequencies)
+        "Hz"
+    ));
+
+    // Low-pass filter resonance: 0.1 - 10.0 (Q factor)
+    layout.add(std::make_unique<juce::AudioParameterFloat>(
+        ParameterIDs::lpFilterResonance,
+        "LP Filter Resonance",
+        juce::NormalisableRange<float>(0.1f, 10.0f, 0.01f, 0.5f),
+        0.707f,  // Default: Butterworth (flat response)
+        ""
+    ));
+
+    // High-pass filter enabled (always on, transparent at min cutoff)
+    layout.add(std::make_unique<juce::AudioParameterBool>(
+        ParameterIDs::hpFilterEnabled,
+        "HP Filter Enabled",
+        true  // Default: on (transparent at min cutoff)
+    ));
+
+    // High-pass filter cutoff: 20Hz - 20kHz
+    layout.add(std::make_unique<juce::AudioParameterFloat>(
+        ParameterIDs::hpFilterCutoff,
+        "HP Filter Cutoff",
+        juce::NormalisableRange<float>(20.0f, 20000.0f, 1.0f, 0.3f),  // Skewed toward lower frequencies
+        20.0f,  // Default: 20Hz (minimum - transparent, passes all frequencies)
+        "Hz"
+    ));
+
+    // High-pass filter resonance: 0.1 - 10.0 (Q factor)
+    layout.add(std::make_unique<juce::AudioParameterFloat>(
+        ParameterIDs::hpFilterResonance,
+        "HP Filter Resonance",
+        juce::NormalisableRange<float>(0.1f, 10.0f, 0.01f, 0.5f),
+        0.707f,  // Default: Butterworth (flat response)
+        ""
+    ));
+
+    // Octave Spread: How many octaves to randomly shift (0-2 octaves)
+    layout.add(std::make_unique<juce::AudioParameterFloat>(
+        ParameterIDs::octaveSpread,
+        "Octave Spread",
+        juce::NormalisableRange<float>(0.0f, 2.0f, 0.1f),
+        0.0f,  // Default: no octave shifting
+        " oct"
+    ));
+
+    // Octave Probability: Chance of applying octave shift (0-100%)
+    layout.add(std::make_unique<juce::AudioParameterFloat>(
+        ParameterIDs::octaveProbability,
+        "Octave Probability",
+        juce::NormalisableRange<float>(0.0f, 100.0f, 1.0f),
+        0.0f,  // Default: 0% (disabled)
+        "%"
+    ));
+
     return layout;
 }
 
@@ -369,6 +451,9 @@ void GrainsAudioProcessor::prepareToPlay (double sampleRate, int samplesPerBlock
         lfo.prepare(sampleRate);
     }
 
+    // Initialize filter
+    filter.prepare(sampleRate, samplesPerBlock);
+
     if (sampleLoaded.load())
     {
         grainEngine.setSourceBuffer(sampleBuffer);
@@ -431,10 +516,8 @@ void GrainsAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce:
     float panSpread = apvts.getRawParameterValue(ParameterIDs::panSpread)->load();
     bool freeze = apvts.getRawParameterValue(ParameterIDs::freeze)->load() > 0.5f;
 
-    // Reverse: combine toggle + probability
-    bool reverseEnabled = apvts.getRawParameterValue(ParameterIDs::reverseEnabled)->load() > 0.5f;
-    float reverseProbability = apvts.getRawParameterValue(ParameterIDs::reverseProbability)->load();
-    float reverse = reverseEnabled ? reverseProbability : 0.0f;  // If disabled, 0% probability
+    // Reverse: use probability directly (0% = no reverse, 100% = all reverse)
+    float reverse = apvts.getRawParameterValue(ParameterIDs::reverseProbability)->load();
 
     // Phase 3 parameters
     float timeStretch = apvts.getRawParameterValue(ParameterIDs::timeStretch)->load();
@@ -571,9 +654,38 @@ void GrainsAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce:
         }
     }
 
+    // Get octave parameters
+    float octaveSpread = apvts.getRawParameterValue(ParameterIDs::octaveSpread)->load();
+    float octaveProbability = apvts.getRawParameterValue(ParameterIDs::octaveProbability)->load();
+
     // Generate grains for any active notes
     grainEngine.process(buffer, position / 100.0f, spray, grainSize, density,
-                       pitch, 0.0f, pan, panSpread, freeze, reverse, timeStretch, grainShape);
+                       pitch, 0.0f, pan, panSpread, freeze, reverse, timeStretch, grainShape,
+                       octaveSpread, octaveProbability);
+
+    // =========================================================================
+    // Apply Filters (Low-pass and High-pass can be active simultaneously)
+    // =========================================================================
+
+    // Low-pass filter
+    bool lpEnabled = apvts.getRawParameterValue(ParameterIDs::lpFilterEnabled)->load() > 0.5f;
+    float lpCutoff = apvts.getRawParameterValue(ParameterIDs::lpFilterCutoff)->load();
+    float lpResonance = apvts.getRawParameterValue(ParameterIDs::lpFilterResonance)->load();
+
+    filter.setLowPassEnabled(lpEnabled);
+    filter.setLowPassCutoff(lpCutoff);
+    filter.setLowPassResonance(lpResonance);
+
+    // High-pass filter
+    bool hpEnabled = apvts.getRawParameterValue(ParameterIDs::hpFilterEnabled)->load() > 0.5f;
+    float hpCutoff = apvts.getRawParameterValue(ParameterIDs::hpFilterCutoff)->load();
+    float hpResonance = apvts.getRawParameterValue(ParameterIDs::hpFilterResonance)->load();
+
+    filter.setHighPassEnabled(hpEnabled);
+    filter.setHighPassCutoff(hpCutoff);
+    filter.setHighPassResonance(hpResonance);
+
+    filter.process(buffer);
 
     // Apply gain
     buffer.applyGain(gain);

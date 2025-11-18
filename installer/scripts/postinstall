@@ -1,0 +1,11 @@
+#!/bin/bash
+
+# Fix permissions after installation
+chmod -R 755 /Library/Audio/Plug-Ins/Components/Somnia.component
+chmod -R 755 /Library/Audio/Plug-Ins/VST3/Somnia.vst3
+
+# Clear audio plugin cache to force rescan
+rm -rf ~/Library/Caches/AudioUnitCache 2>/dev/null || true
+
+echo "Somnia installed successfully!"
+exit 0

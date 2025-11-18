@@ -4,6 +4,8 @@
 #include <juce_gui_basics/juce_gui_basics.h>
 #include "PluginProcessor.h"
 #include "UnifiedVisualization.h"
+#include "InteractiveADSREnvelope.h"
+#include "ModulatedSlider.h"
 #include <set>
 
 //==============================================================================
@@ -52,16 +54,20 @@ private:
     // UI Components
     juce::TextButton loadSampleButton;
 
-    // Main content component with section dividers
+    // Main content component with column borders
     class MainContentComponent : public juce::Component
     {
     public:
         void paint(juce::Graphics& g) override;
         void setSectionPositions(int section1End, int section2End);
+        void setColumnBounds(juce::Rectangle<int> grainDesign, juce::Rectangle<int> filters, juce::Rectangle<int> output);
 
     private:
         int section1EndY = 0;
         int section2EndY = 0;
+        juce::Rectangle<int> grainDesignBounds;
+        juce::Rectangle<int> filtersBounds;
+        juce::Rectangle<int> outputBounds;
     };
 
     // Main content viewport (for scrolling on smaller displays)
@@ -74,47 +80,56 @@ private:
     juce::Label grainSourceSectionLabel;
     juce::Label outputSectionLabel;
 
-    // Parameter sliders
-    juce::Slider positionSlider;
+    // Parameter sliders (using ModulatedSlider for LFO-modulatable parameters)
+    ModulatedSlider positionSlider;
     juce::Label positionLabel;
 
-    juce::Slider spraySlider;
+    ModulatedSlider spraySlider;
     juce::Label sprayLabel;
 
-    juce::Slider grainSizeSlider;
+    ModulatedSlider grainSizeSlider;
     juce::Label grainSizeLabel;
 
-    juce::Slider densitySlider;
+    ModulatedSlider densitySlider;
     juce::Label densityLabel;
 
-    juce::Slider pitchSlider;
+    ModulatedSlider pitchSlider;
     juce::Label pitchLabel;
 
-    juce::Slider panSlider;
+    ModulatedSlider panSlider;
     juce::Label panLabel;
 
     juce::Slider gainSlider;
     juce::Label gainLabel;
 
     // Phase 2 controls
-    juce::Slider panSpreadSlider;
+    ModulatedSlider panSpreadSlider;
     juce::Label panSpreadLabel;
 
     juce::ToggleButton reverseToggle;
     juce::Label reverseLabel;
 
-    // Phase 5 controls - Envelope
-    juce::Slider envAttackSlider;
-    juce::Label envAttackLabel;
-    juce::Slider envDecaySlider;
-    juce::Label envDecayLabel;
-    juce::Slider envSustainSlider;
-    juce::Label envSustainLabel;
-    juce::Slider envReleaseSlider;
-    juce::Label envReleaseLabel;
+    // Interactive ADSR Envelope (replaces separate knobs + visualizer)
+    InteractiveADSREnvelope interactiveADSR;
 
-    juce::ComboBox grainShapeCombo;
-    juce::Label grainShapeLabel;
+    // Filter controls
+    juce::Label filterSectionLabel;
+
+    // Low-pass filter
+    juce::ToggleButton lpFilterToggle;
+    juce::Label lpFilterLabel;
+    juce::Slider lpFilterCutoffSlider;
+    juce::Label lpFilterCutoffLabel;
+    juce::Slider lpFilterResonanceSlider;
+    juce::Label lpFilterResonanceLabel;
+
+    // High-pass filter
+    juce::ToggleButton hpFilterToggle;
+    juce::Label hpFilterLabel;
+    juce::Slider hpFilterCutoffSlider;
+    juce::Label hpFilterCutoffLabel;
+    juce::Slider hpFilterResonanceSlider;
+    juce::Label hpFilterResonanceLabel;
 
     // Phase 4 controls - LFO System (in advanced panel overlay)
     juce::TextButton advancedToggleButton;
@@ -149,6 +164,12 @@ private:
         juce::Label timeStretchLabel;
         juce::ToggleButton timeStretchToggle;
         juce::Label timeStretchToggleLabel;
+        juce::Slider octaveSpreadSlider;
+        juce::Label octaveSpreadLabel;
+        juce::Slider octaveProbabilitySlider;
+        juce::Label octaveProbabilityLabel;
+        juce::ComboBox grainShapeCombo;
+        juce::Label grainShapeLabel;
 
         // Close button
         juce::TextButton closeButton;
@@ -160,19 +181,25 @@ private:
         class ModulationTab : public juce::Component
         {
         public:
-            ModulationTab(AdvancedPanel& parent) : panel(parent) {}
+            ModulationTab(AdvancedPanel& parent);
             void resized() override;
         private:
             AdvancedPanel& panel;
+            juce::Viewport viewport;
+            juce::Component contentComponent;
+            bool isResizing = false;
         };
 
         class SoundDesignTab : public juce::Component
         {
         public:
-            SoundDesignTab(AdvancedPanel& parent) : panel(parent) {}
+            SoundDesignTab(AdvancedPanel& parent);
             void resized() override;
         private:
             AdvancedPanel& panel;
+            juce::Viewport viewport;
+            juce::Component contentComponent;
+            bool isResizing = false;
         };
 
         std::unique_ptr<ModulationTab> modulationTab;
@@ -205,12 +232,16 @@ private:
     std::unique_ptr<SliderAttachment> timeStretchAttachment;  // In advanced panel Sound Design tab
     std::unique_ptr<ButtonAttachment> timeStretchToggleAttachment;  // In advanced panel Sound Design tab
     std::unique_ptr<SliderAttachment> reverseProbabilityAttachment;  // In advanced panel Sound Design tab
+    std::unique_ptr<SliderAttachment> octaveSpreadAttachment;  // In advanced panel Sound Design tab
+    std::unique_ptr<SliderAttachment> octaveProbabilityAttachment;  // In advanced panel Sound Design tab
 
-    // Phase 5 attachments - Envelope
-    std::unique_ptr<SliderAttachment> envAttackAttachment;
-    std::unique_ptr<SliderAttachment> envDecayAttachment;
-    std::unique_ptr<SliderAttachment> envSustainAttachment;
-    std::unique_ptr<SliderAttachment> envReleaseAttachment;
+    // Filter attachments
+    std::unique_ptr<ButtonAttachment> lpFilterToggleAttachment;
+    std::unique_ptr<SliderAttachment> lpFilterCutoffAttachment;
+    std::unique_ptr<SliderAttachment> lpFilterResonanceAttachment;
+    std::unique_ptr<ButtonAttachment> hpFilterToggleAttachment;
+    std::unique_ptr<SliderAttachment> hpFilterCutoffAttachment;
+    std::unique_ptr<SliderAttachment> hpFilterResonanceAttachment;
 
     // Phase 4 attachments - LFO System (stored in editor, not in panel)
     struct LFOAttachments
@@ -227,6 +258,7 @@ private:
     void toggleAdvancedPanel();
     void updateTimeStretchSliderState();
     void updateVisualFeedback();
+    void updateModulationIndicators();
 
     // Timer callback for visual feedback
     void timerCallback() override;
@@ -236,6 +268,13 @@ private:
 
     // Drag and drop state
     bool isDraggingFile = false;
+
+    // Resize state tracking to prevent jittering
+    bool isResizing = false;
+    juce::Rectangle<int> lastBounds;
+
+    // Tooltip window for displaying tooltips
+    juce::TooltipWindow tooltipWindow;
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (GrainsAudioProcessorEditor)
 };
