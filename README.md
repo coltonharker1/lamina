@@ -1,109 +1,151 @@
-# Grains VST - Granular Synthesis Plugin
+# Lamina
 
-A professional granular synthesis VST3/AU plugin built with JUCE.
+A polyphonic granular sample synthesizer for macOS. Drop in any audio file and play it back as a cloud, a swarm, a stretched drone, or a textural pad — each MIDI note triggers its own grain stream with independent envelope, pitch, and articulation.
 
-## Current Status
+VST3 and Audio Unit, MIDI in / stereo out.
 
-✅ **Phase 0.1 - Hello World Plugin** (Completed)
-- JUCE project setup with CMake
-- Basic plugin shell with UI
-- VST3 and AU builds working
-- Audio passthrough implemented
-- Successfully builds and installs to system plugin directories
+## What's in it
+
+**Sample engine**
+- Drag-and-drop sample loading (WAV / AIFF / etc.)
+- 256-voice grain pool with round-robin allocation
+- 4-point cubic Hermite interpolation in the sample read
+- Per-grain one-pole filter for darkening / shaping individual grains
+- Per-grain Haas-effect stereo spread for spatial width
+- Thread-safe sample swapping — change sources mid-playback without crashes
+
+**Grain controls**
+- **Position** — playhead in the source sample (0–100%)
+- **Spray** — random position deviation
+- **Size** — grain duration, 5–500 ms
+- **Density** — grains/second, 1–100
+- **Pitch** — semitone shift, ±24
+- **Pan** + **Pan Spread** — center + per-grain randomization
+- **Reverse** — probability that a grain plays backwards
+- **Time Stretch** — independent of pitch (0.25× – 4×) when unlocked
+- **Freeze** — locks the playhead for an infinite drone
+- **Grain Shape** — Hann, Triangle, Trapezoid, Exponential, Gaussian envelopes (lookup-table backed)
+
+**Polyphony & envelope**
+- Per-MIDI-note ADSR (attack / decay / sustain / release) with smooth tail fade
+- Polyphonic — each held note runs its own grain stream and envelope simultaneously
+- Allocation-free hot path: array-backed envelopes, flag-array note tracking
+
+**Modulation**
+- 4 independent LFOs, each with 6 waveforms (sine, triangle, saw up, saw down, square, S&H random)
+- 8 modulation targets per LFO (position, spray, size, density, pitch, pan, pan spread, reverse)
+- Tempo sync to host BPM via JUCE 7+ playhead API
+- Phase offset, depth, and rate per LFO
+
+**Filters**
+- Independent low-pass and high-pass post the grain mix
+- Resonance / Q control on each
+- Real-time-safe coefficient updates (no audio-thread heap activity)
+
+**Texture / humanization**
+- Octave randomization with separate 3rd-octave probability
+- Per-grain micro-detune (cents)
+- Timing jitter (humanize the grain clock)
+- Per-grain size randomization
+- Per-grain filter randomization
 
 ## Installation
 
-The plugin is automatically installed to:
-- **macOS VST3**: `~/Library/Audio/Plug-Ins/VST3/Grains.vst3`
-- **macOS AU**: `~/Library/Audio/Plug-Ins/Components/Grains.component`
+The plugin is **not signed or notarized**. macOS Gatekeeper will flag it. The steps below get you around it.
 
-## Testing the Plugin
+### Option 1 — PKG installer (recommended)
 
-1. Open your DAW (Ableton, Logic, Reaper, etc.)
-2. Rescan plugins or restart the DAW
-3. Look for "Grains" in your plugin list
-4. Load it on an audio track
-5. You should see a dark window with "Grains VST" and "Plugin Loaded Successfully!"
-6. Currently it just passes audio through unchanged (bypass mode)
+1. Download the latest `Lamina-x.y.z.pkg` from [Releases](https://github.com/coltonharker1/lamina/releases).
+2. **Right-click** (or Control-click) the `.pkg` → **Open**. Confirm in the dialog.
+   - If you double-click instead, macOS will refuse with *"Apple cannot check it for malicious software"*. Right-click → Open is the one-time bypass.
+3. Step through the installer and enter your admin password when prompted.
+4. Restart your DAW.
 
-## Building from Source
+### Option 2 — Manual install
 
-### Prerequisites
-- macOS with Xcode Command Line Tools
-- CMake 3.22 or higher
-- JUCE Framework (currently at `/Users/colton/Downloads/JUCE`)
+If the installer fails, copy the bundles by hand and strip the quarantine attribute:
 
-### Build Commands
 ```bash
-cd /Users/colton/code/me/plugins/grains-vst
-mkdir build
-cd build
-cmake ..
-cmake --build . --config Release -j4
+# 1. Copy
+sudo cp -R Lamina.component /Library/Audio/Plug-Ins/Components/
+sudo cp -R Lamina.vst3      /Library/Audio/Plug-Ins/VST3/
+
+# 2. Permissions + ownership
+sudo chmod -R 755 /Library/Audio/Plug-Ins/Components/Lamina.component
+sudo chmod -R 755 /Library/Audio/Plug-Ins/VST3/Lamina.vst3
+sudo chown -R root:wheel /Library/Audio/Plug-Ins/Components/Lamina.component
+sudo chown -R root:wheel /Library/Audio/Plug-Ins/VST3/Lamina.vst3
+
+# 3. Strip Gatekeeper quarantine (the critical step)
+sudo xattr -rd com.apple.quarantine /Library/Audio/Plug-Ins/Components/Lamina.component
+sudo xattr -rd com.apple.quarantine /Library/Audio/Plug-Ins/VST3/Lamina.vst3
 ```
 
-## Project Structure
+### Troubleshooting Gatekeeper
 
-```
-grains-vst/
-├── CMakeLists.txt           # Build configuration
-├── Source/
-│   ├── PluginProcessor.h    # Audio processing logic
-│   ├── PluginProcessor.cpp
-│   ├── PluginEditor.h       # UI/GUI code
-│   └── PluginEditor.cpp
-├── build/                   # Build artifacts (gitignored)
-└── README.md
+If your DAW silently refuses to load the plugin, or you see *"Lamina.component is damaged and can't be opened"*:
+
+```bash
+# Nuke all quarantine / extended attrs and re-bless the bundle
+sudo xattr -cr /Library/Audio/Plug-Ins/Components/Lamina.component
+sudo xattr -cr /Library/Audio/Plug-Ins/VST3/Lamina.vst3
 ```
 
-## Roadmap
+If macOS still refuses, open **System Settings → Privacy & Security**, scroll to the bottom, and click **Allow Anyway** next to the Lamina entry that appears after the first load attempt.
 
-### Phase 1: MVP - Core Granular Engine (4-6 weeks)
-- [ ] Sample loading (drag & drop WAV/AIFF)
-- [ ] Position control
-- [ ] Grain size control
-- [ ] Density control
-- [ ] Spray/randomization
-- [ ] Pitch shifting
-- [ ] Basic waveform display
-- [ ] Volume/gain control
-- [ ] Dry/wet mix
+### Supported hosts
 
-### Phase 2: Enhanced Controls (3-4 weeks)
-- [ ] Stereo width control
-- [ ] Pan randomization
-- [ ] Pitch randomization
-- [ ] Freeze mode
-- [ ] Reverse grains
-- [ ] 4x LFO modulation matrix
-- [ ] Animated waveform with grain visualization
-- [ ] Preset system
+- **AU**: Logic Pro, GarageBand, MainStage
+- **VST3**: Ableton Live, FL Studio, Cubase, Reaper, Bitwig, Studio One, etc.
 
-### Phase 3: V2 Features (4-6 weeks)
-- [ ] Envelope shape selection
-- [ ] Granular delay mode
-- [ ] Multi-sample support
-- [ ] MIDI triggering
-- [ ] Macro controls
-- [ ] Factory preset library
+Lamina is a **MIDI instrument** — load it on an instrument track and feed it MIDI notes. Drag a sample into the editor to get started.
 
-## Development Notes
+## Building from source
 
-- Using JUCE 7.x
-- Targeting C++17
-- Building VST3 and AU formats
-- Dark UI aesthetic matching web version (#0a0a0a background)
-- Plugin currently passes audio through unchanged (good for testing)
+### Requirements
 
-## Next Steps
+- macOS 10.13 or later
+- Xcode Command Line Tools
+- CMake 3.22+
+- [JUCE](https://juce.com/) (clone separately, alongside this repo)
 
-1. Test loading in multiple DAWs
-2. Implement basic parameter system (AudioProcessorValueTreeState)
-3. Start building grain voice class
-4. Implement sample loading functionality
+### Build
 
----
+The CMakeLists assumes JUCE lives at `../JUCE` relative to this project. Adjust if your layout differs:
 
-**Project Start Date**: October 27, 2025
-**Target MVP Completion**: December 2025
-**Commercial Release**: Q1 2026
+```bash
+git clone https://github.com/coltonharker1/lamina.git
+cd lamina
+cmake -B build -S .
+cmake --build build --config Release -j
+```
+
+Built bundles end up in:
+
+- `build/GrainsVST_artefacts/AU/Lamina.component`
+- `build/GrainsVST_artefacts/VST3/Lamina.vst3`
+
+`COPY_PLUGIN_AFTER_BUILD` is on, so a Release build also copies the freshly-built bundles into `~/Library/Audio/Plug-Ins/`. Self-built bundles have no quarantine attribute, so they load directly — the `xattr` dance is only needed for downloaded artifacts.
+
+### Packaging an installer
+
+```bash
+./create-installer.sh
+```
+
+Produces `installer-output/Lamina-1.0.pkg`.
+
+## Uninstall
+
+```bash
+sudo rm -rf /Library/Audio/Plug-Ins/Components/Lamina.component
+sudo rm -rf /Library/Audio/Plug-Ins/VST3/Lamina.vst3
+```
+
+## License
+
+MIT — see `LICENSE`.
+
+## Credits
+
+Developed by Project Sonaris.
