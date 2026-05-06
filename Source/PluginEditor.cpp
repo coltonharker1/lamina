@@ -1,46 +1,155 @@
 #include "PluginProcessor.h"
 #include "PluginEditor.h"
+#include "BinaryData.h"
+
+namespace
+{
+constexpr juce::uint32 paper = 0xfff4f1ea;
+constexpr juce::uint32 ink = 0xff050505;
+constexpr juce::uint32 quietInk = 0xaa000000;
+constexpr juce::uint32 faintInk = 0x16000000;
+
+juce::FontOptions monoFont(juce::Typeface::Ptr typeface, float height)
+{
+    return juce::FontOptions(typeface).withHeight(height);
+}
+
+juce::FontOptions serifFont(juce::Typeface::Ptr typeface, float height)
+{
+    return juce::FontOptions(typeface).withHeight(height);
+}
+}
+
+void GrainsAudioProcessorEditor::MonoPrintLookAndFeel::drawRotarySlider(
+    juce::Graphics& g, int x, int y, int width, int height, float sliderPosProportional,
+    float rotaryStartAngle, float rotaryEndAngle, juce::Slider&)
+{
+    auto bounds = juce::Rectangle<float>(static_cast<float>(x), static_cast<float>(y),
+                                         static_cast<float>(width), static_cast<float>(height)).reduced(4.0f);
+    auto centre = bounds.getCentre();
+    const float radius = juce::jmin(bounds.getWidth(), bounds.getHeight()) * 0.39f;
+    const float angle = rotaryStartAngle + sliderPosProportional * (rotaryEndAngle - rotaryStartAngle);
+
+    g.setColour(juce::Colour(ink));
+    g.drawEllipse(centre.x - radius, centre.y - radius, radius * 2.0f, radius * 2.0f, 1.0f);
+    g.drawEllipse(centre.x - radius * 0.76f, centre.y - radius * 0.76f,
+                  radius * 1.52f, radius * 1.52f, 0.6f);
+
+    for (int i = 0; i <= 18; ++i)
+    {
+        const float t = static_cast<float>(i) / 18.0f;
+        const float tickAngle = rotaryStartAngle + t * (rotaryEndAngle - rotaryStartAngle);
+        const float outer = radius * 1.22f;
+        const float inner = radius * (i % 3 == 0 ? 1.02f : 1.12f);
+        const auto p1 = centre + juce::Point<float>(std::cos(tickAngle) * inner, std::sin(tickAngle) * inner);
+        const auto p2 = centre + juce::Point<float>(std::cos(tickAngle) * outer, std::sin(tickAngle) * outer);
+        g.drawLine({ p1, p2 }, i % 3 == 0 ? 0.75f : 0.45f);
+    }
+
+    const auto indicator = centre + juce::Point<float>(std::cos(angle) * radius * 0.68f,
+                                                       std::sin(angle) * radius * 0.68f);
+    g.drawLine({ centre, indicator }, 1.8f);
+    g.fillEllipse(centre.x - 1.6f, centre.y - 1.6f, 3.2f, 3.2f);
+}
+
+void GrainsAudioProcessorEditor::MonoPrintLookAndFeel::drawButtonBackground(
+    juce::Graphics& g, juce::Button& button, const juce::Colour&,
+    bool shouldDrawButtonAsHighlighted, bool shouldDrawButtonAsDown)
+{
+    auto bounds = button.getLocalBounds().toFloat().reduced(0.5f);
+    const bool active = button.getToggleState() || shouldDrawButtonAsDown;
+    g.setColour(active ? juce::Colour(ink) : juce::Colour(paper));
+    g.fillRect(bounds);
+    g.setColour(juce::Colour(ink).withAlpha(shouldDrawButtonAsHighlighted ? 1.0f : 0.82f));
+    g.drawRect(bounds, active ? 1.4f : 0.9f);
+}
+
+void GrainsAudioProcessorEditor::MonoPrintLookAndFeel::drawButtonText(
+    juce::Graphics& g, juce::TextButton& button, bool, bool shouldDrawButtonAsDown)
+{
+    const bool active = button.getToggleState() || shouldDrawButtonAsDown;
+    g.setColour(active ? juce::Colour(paper) : juce::Colour(ink));
+    g.setFont(juce::Font(juce::FontOptions(9.0f)));
+    g.drawFittedText(button.getButtonText().toUpperCase(), button.getLocalBounds().reduced(6, 0),
+                     juce::Justification::centred, 1);
+}
+
+void GrainsAudioProcessorEditor::MonoPrintLookAndFeel::drawScrollbar(
+    juce::Graphics& g, juce::ScrollBar&, int x, int y, int width, int height,
+    bool isScrollbarVertical, int thumbStartPosition, int thumbSize, bool isMouseOver, bool isMouseDown)
+{
+    auto track = juce::Rectangle<int>(x, y, width, height).toFloat();
+    g.setColour(juce::Colour(faintInk));
+    g.fillRect(track);
+
+    juce::Rectangle<float> thumb;
+    if (isScrollbarVertical)
+        thumb = { track.getX() + 3.0f, track.getY() + static_cast<float>(thumbStartPosition),
+                  juce::jmax(2.0f, track.getWidth() - 6.0f), static_cast<float>(thumbSize) };
+    else
+        thumb = { track.getX() + static_cast<float>(thumbStartPosition), track.getY() + 3.0f,
+                  static_cast<float>(thumbSize), juce::jmax(2.0f, track.getHeight() - 6.0f) };
+
+    g.setColour(juce::Colour(ink).withAlpha((isMouseOver || isMouseDown) ? 0.72f : 0.48f));
+    g.fillRect(thumb);
+}
+
+juce::Font GrainsAudioProcessorEditor::MonoPrintLookAndFeel::getTabButtonFont(
+    juce::TabBarButton&, float)
+{
+    return juce::Font(juce::FontOptions(13.0f));
+}
+
+void GrainsAudioProcessorEditor::MonoPrintLookAndFeel::drawTabButton(
+    juce::TabBarButton& button, juce::Graphics& g, bool isMouseOver, bool isMouseDown)
+{
+    auto bounds = button.getLocalBounds().toFloat().reduced(0.5f, 0.0f);
+    const bool active = button.isFrontTab();
+
+    g.setColour(active ? juce::Colour(paper) : juce::Colour(paper).darker(0.025f));
+    g.fillRect(bounds);
+
+    g.setColour(juce::Colour(ink).withAlpha(active ? 0.95f : ((isMouseOver || isMouseDown) ? 0.55f : 0.28f)));
+    g.drawRect(bounds, active ? 1.1f : 0.75f);
+
+    if (active)
+        g.fillRect(bounds.withY(bounds.getBottom() - 1.5f).withHeight(1.5f));
+
+    drawTabButtonText(button, g, isMouseOver, isMouseDown);
+}
+
+void GrainsAudioProcessorEditor::MonoPrintLookAndFeel::drawTabButtonText(
+    juce::TabBarButton& button, juce::Graphics& g, bool, bool)
+{
+    g.setColour(juce::Colour(button.isFrontTab() ? ink : quietInk));
+    g.setFont(getTabButtonFont(button, static_cast<float>(button.getHeight())));
+    g.drawFittedText(button.getButtonText().toUpperCase(), button.getTextArea().reduced(10, 0),
+                     juce::Justification::centred, 1);
+}
 
 //==============================================================================
 // MainContentComponent Implementation
 //==============================================================================
 void GrainsAudioProcessorEditor::MainContentComponent::paint(juce::Graphics& g)
 {
-    // Draw rounded borders around the three sections
+    g.fillAll(juce::Colour(paper));
+
     if (!grainDesignBounds.isEmpty())
     {
-        // Grain Design section - subtle border with rounded corners
-        g.setColour(juce::Colour(0xff334155).withAlpha(0.3f));  // Slate border
-        auto bounds = grainDesignBounds.reduced(4, 4).toFloat();
-        g.drawRoundedRectangle(bounds, 12.0f, 1.5f);
-
-        // Subtle inner glow
-        g.setColour(juce::Colour(0xffa78bfa).withAlpha(0.05f));  // Purple tint for Grain Design
-        g.fillRoundedRectangle(bounds, 12.0f);
+        g.setColour(juce::Colour(ink));
+        g.drawRect(grainDesignBounds.reduced(4, 4), 1);
     }
 
     if (!filtersBounds.isEmpty())
     {
-        // Filters section - subtle border with rounded corners
-        g.setColour(juce::Colour(0xff334155).withAlpha(0.3f));  // Slate border
-        auto bounds = filtersBounds.reduced(4, 4).toFloat();
-        g.drawRoundedRectangle(bounds, 12.0f, 1.5f);
-
-        // Subtle inner glow
-        g.setColour(juce::Colour(0xffa78bfa).withAlpha(0.05f));  // Purple tint for Filters
-        g.fillRoundedRectangle(bounds, 12.0f);
+        g.setColour(juce::Colour(ink));
+        g.drawRect(filtersBounds.reduced(4, 4), 1);
     }
 
     if (!outputBounds.isEmpty())
     {
-        // Output section - subtle border with rounded corners
-        g.setColour(juce::Colour(0xff334155).withAlpha(0.3f));  // Slate border
-        auto bounds = outputBounds.reduced(4, 4).toFloat();
-        g.drawRoundedRectangle(bounds, 12.0f, 1.5f);
-
-        // Subtle inner glow
-        g.setColour(juce::Colour(0xfff472b6).withAlpha(0.05f));  // Pink tint for Output
-        g.fillRoundedRectangle(bounds, 12.0f);
+        g.setColour(juce::Colour(ink));
+        g.drawRect(outputBounds.reduced(4, 4), 1);
     }
 }
 
@@ -66,28 +175,71 @@ GrainsAudioProcessorEditor::AdvancedPanel::AdvancedPanel()
     : tabbedComponent(juce::TabbedButtonBar::TabsAtTop)
 {
     // Setup close button
-    closeButton.setButtonText("X");
-    closeButton.setColour(juce::TextButton::buttonColourId, juce::Colour(0xff4a4a52));
-    closeButton.setColour(juce::TextButton::textColourOffId, juce::Colour(0xfff5f1e8));
+    closeButton.setButtonText("CLOSE");
+    closeButton.setColour(juce::TextButton::buttonColourId, juce::Colour(paper));
+    closeButton.setColour(juce::TextButton::textColourOffId, juce::Colour(ink));
+    closeButton.setColour(juce::TextButton::buttonOnColourId, juce::Colour(ink));
+    closeButton.setColour(juce::TextButton::textColourOnId, juce::Colour(paper));
     addAndMakeVisible(closeButton);
 
     // Setup tabbed component
-    tabbedComponent.setTabBarDepth(35);
-    tabbedComponent.setColour(juce::TabbedComponent::backgroundColourId, juce::Colour(0xff1a2332));
-    tabbedComponent.setColour(juce::TabbedComponent::outlineColourId, juce::Colour(0xff4a4a52));
-    tabbedComponent.setColour(juce::TabbedButtonBar::tabOutlineColourId, juce::Colour(0xff4a4a52));
-    tabbedComponent.setColour(juce::TabbedButtonBar::frontOutlineColourId, juce::Colour(0xffb4a5d8));
-    tabbedComponent.setColour(juce::TabbedButtonBar::tabTextColourId, juce::Colour(0xff9ba4d8));
-    tabbedComponent.setColour(juce::TabbedButtonBar::frontTextColourId, juce::Colour(0xfff5f1e8));
+    tabbedComponent.setTabBarDepth(30);
+    tabbedComponent.setColour(juce::TabbedComponent::backgroundColourId, juce::Colour(paper));
+    tabbedComponent.setColour(juce::TabbedComponent::outlineColourId, juce::Colour(ink));
+    tabbedComponent.setColour(juce::TabbedButtonBar::tabOutlineColourId, juce::Colour(ink));
+    tabbedComponent.setColour(juce::TabbedButtonBar::frontOutlineColourId, juce::Colour(ink));
+    tabbedComponent.setColour(juce::TabbedButtonBar::tabTextColourId, juce::Colour(quietInk));
+    tabbedComponent.setColour(juce::TabbedButtonBar::frontTextColourId, juce::Colour(ink));
     addAndMakeVisible(tabbedComponent);
+
+    auto styleSlider = [](juce::Slider& slider)
+    {
+        slider.setSliderStyle(juce::Slider::RotaryHorizontalVerticalDrag);
+        slider.setTextBoxStyle(juce::Slider::NoTextBox, false, 0, 0);
+        slider.setRotaryParameters(juce::MathConstants<float>::pi * 0.75f,
+                                   juce::MathConstants<float>::pi * 2.25f,
+                                   true);
+        slider.setColour(juce::Slider::textBoxTextColourId, juce::Colour(ink));
+        slider.setColour(juce::Slider::textBoxBackgroundColourId, juce::Colours::transparentBlack);
+        slider.setColour(juce::Slider::textBoxOutlineColourId, juce::Colours::transparentBlack);
+    };
+
+    auto styleLabel = [](juce::Label& label)
+    {
+        label.setFont(juce::Font(juce::FontOptions(8.0f)));
+        label.setColour(juce::Label::textColourId, juce::Colour(quietInk));
+        label.setJustificationType(juce::Justification::centred);
+    };
+
+    auto styleHeader = [](juce::Label& label)
+    {
+        label.setFont(juce::Font(juce::FontOptions(8.5f)));
+        label.setColour(juce::Label::textColourId, juce::Colour(ink));
+        label.setJustificationType(juce::Justification::left);
+    };
+
+    auto styleToggle = [](juce::ToggleButton& toggle)
+    {
+        toggle.setColour(juce::ToggleButton::textColourId, juce::Colour(ink));
+        toggle.setColour(juce::ToggleButton::tickColourId, juce::Colour(ink));
+        toggle.setColour(juce::ToggleButton::tickDisabledColourId, juce::Colour(quietInk));
+    };
+
+    auto styleCombo = [](juce::ComboBox& combo)
+    {
+        combo.setColour(juce::ComboBox::backgroundColourId, juce::Colour(paper));
+        combo.setColour(juce::ComboBox::textColourId, juce::Colour(ink));
+        combo.setColour(juce::ComboBox::outlineColourId, juce::Colour(ink));
+        combo.setColour(juce::ComboBox::arrowColourId, juce::Colour(ink));
+    };
 
     // Create tab content components
     modulationTab = std::make_unique<ModulationTab>(*this);
     soundDesignTab = std::make_unique<SoundDesignTab>(*this);
 
     // Add tabs
-    tabbedComponent.addTab("Modulation", juce::Colour(0xff1a2332), modulationTab.get(), false);
-    tabbedComponent.addTab("Sound Design", juce::Colour(0xff1a2332), soundDesignTab.get(), false);
+    tabbedComponent.addTab("Patch", juce::Colour(paper), modulationTab.get(), false);
+    tabbedComponent.addTab("Treatment", juce::Colour(paper), soundDesignTab.get(), false);
 
     // Setup LFO controls (styling only - added to content in ModulationTab constructor)
     for (int i = 0; i < 4; ++i)
@@ -95,35 +247,19 @@ GrainsAudioProcessorEditor::AdvancedPanel::AdvancedPanel()
         auto& controls = lfoControls[i];
         juce::String lfoNum = juce::String(i + 1);
 
-        // Rate slider
-        controls.rateSlider.setSliderStyle(juce::Slider::RotaryHorizontalVerticalDrag);
-        controls.rateSlider.setTextBoxStyle(juce::Slider::TextBoxBelow, false, 60, 20);
-        controls.rateSlider.setColour(juce::Slider::rotarySliderFillColourId, juce::Colour(0xffb4a5d8));
-        controls.rateSlider.setColour(juce::Slider::thumbColourId, juce::Colour(0xfff5f1e8));
-        controls.rateSlider.setColour(juce::Slider::trackColourId, juce::Colour(0xff4a4a52));
+        styleSlider(controls.rateSlider);
 
-        controls.rateLabel.setText("LFO" + lfoNum + " Rate", juce::dontSendNotification);
-        controls.rateLabel.setFont(juce::Font(juce::FontOptions("Arial", 12.0f, juce::Font::plain)));
-        controls.rateLabel.setColour(juce::Label::textColourId, juce::Colour(0xff9ba4d8));
-        controls.rateLabel.setJustificationType(juce::Justification::centred);
+        controls.rateLabel.setText("LFO " + lfoNum + " / Rate", juce::dontSendNotification);
+        styleLabel(controls.rateLabel);
 
-        // Depth slider
-        controls.depthSlider.setSliderStyle(juce::Slider::RotaryHorizontalVerticalDrag);
-        controls.depthSlider.setTextBoxStyle(juce::Slider::TextBoxBelow, false, 60, 20);
-        controls.depthSlider.setColour(juce::Slider::rotarySliderFillColourId, juce::Colour(0xffb4a5d8));
-        controls.depthSlider.setColour(juce::Slider::thumbColourId, juce::Colour(0xfff5f1e8));
-        controls.depthSlider.setColour(juce::Slider::trackColourId, juce::Colour(0xff4a4a52));
+        styleSlider(controls.depthSlider);
 
-        controls.depthLabel.setText("LFO" + lfoNum + " Depth", juce::dontSendNotification);
-        controls.depthLabel.setFont(juce::Font(juce::FontOptions("Arial", 12.0f, juce::Font::plain)));
-        controls.depthLabel.setColour(juce::Label::textColourId, juce::Colour(0xff9ba4d8));
-        controls.depthLabel.setJustificationType(juce::Justification::centred);
+        controls.depthLabel.setText("Depth", juce::dontSendNotification);
+        styleLabel(controls.depthLabel);
 
         // Enabled toggle button
         controls.enabledToggle.setButtonText("ON");
-        controls.enabledToggle.setColour(juce::ToggleButton::textColourId, juce::Colour(0xfff5f1e8));
-        controls.enabledToggle.setColour(juce::ToggleButton::tickColourId, juce::Colour(0xffb4a5d8));
-        controls.enabledToggle.setColour(juce::ToggleButton::tickDisabledColourId, juce::Colour(0xff4a4a52));
+        styleToggle(controls.enabledToggle);
 
         // Waveform combo
         controls.waveformCombo.addItem("Sine", 1);
@@ -132,117 +268,139 @@ GrainsAudioProcessorEditor::AdvancedPanel::AdvancedPanel()
         controls.waveformCombo.addItem("Saw Down", 4);
         controls.waveformCombo.addItem("Square", 5);
         controls.waveformCombo.addItem("Random", 6);
-        controls.waveformCombo.setColour(juce::ComboBox::backgroundColourId, juce::Colour(0xff1a2332));
-        controls.waveformCombo.setColour(juce::ComboBox::textColourId, juce::Colour(0xfff5f1e8));
-        controls.waveformCombo.setColour(juce::ComboBox::outlineColourId, juce::Colour(0xff4a4a52));
-        controls.waveformCombo.setColour(juce::ComboBox::arrowColourId, juce::Colour(0xffb4a5d8));
+        styleCombo(controls.waveformCombo);
 
-        controls.waveformLabel.setText("Waveform", juce::dontSendNotification);
-        controls.waveformLabel.setFont(juce::Font(juce::FontOptions("Arial", 12.0f, juce::Font::plain)));
-        controls.waveformLabel.setColour(juce::Label::textColourId, juce::Colour(0xff9ba4d8));
-        controls.waveformLabel.setJustificationType(juce::Justification::centred);
+        controls.waveformLabel.setText("Trace", juce::dontSendNotification);
+        styleLabel(controls.waveformLabel);
 
         // Target combo
-        controls.targetCombo.addItem("Position", 1);
-        controls.targetCombo.addItem("Spray", 2);
-        controls.targetCombo.addItem("Size", 3);
-        controls.targetCombo.addItem("Density", 4);
-        controls.targetCombo.addItem("Pitch", 5);
-        controls.targetCombo.addItem("Pan", 6);
-        controls.targetCombo.addItem("Pan Spread", 7);
+        controls.targetCombo.addItem("Focus", 1);
+        controls.targetCombo.addItem("Scatter", 2);
+        controls.targetCombo.addItem("Thread", 3);
+        controls.targetCombo.addItem("Cloud", 4);
+        controls.targetCombo.addItem("Lift", 5);
+        controls.targetCombo.addItem("Drift", 6);
+        controls.targetCombo.addItem("Halo", 7);
         controls.targetCombo.addItem("Reverse", 8);
         controls.targetCombo.addItem("None", 9);
-        controls.targetCombo.setColour(juce::ComboBox::backgroundColourId, juce::Colour(0xff1a2332));
-        controls.targetCombo.setColour(juce::ComboBox::textColourId, juce::Colour(0xfff5f1e8));
-        controls.targetCombo.setColour(juce::ComboBox::outlineColourId, juce::Colour(0xff4a4a52));
-        controls.targetCombo.setColour(juce::ComboBox::arrowColourId, juce::Colour(0xffb4a5d8));
+        styleCombo(controls.targetCombo);
 
-        controls.targetLabel.setText("Target", juce::dontSendNotification);
-        controls.targetLabel.setFont(juce::Font(juce::FontOptions("Arial", 12.0f, juce::Font::plain)));
-        controls.targetLabel.setColour(juce::Label::textColourId, juce::Colour(0xff9ba4d8));
-        controls.targetLabel.setJustificationType(juce::Justification::centred);
+        controls.targetLabel.setText("Field", juce::dontSendNotification);
+        styleLabel(controls.targetLabel);
     }
 
     // Setup Sound Design controls (styling only - added to content in SoundDesignTab constructor)
-    // Time Stretch slider
-    timeStretchSlider.setSliderStyle(juce::Slider::RotaryHorizontalVerticalDrag);
-    timeStretchSlider.setTextBoxStyle(juce::Slider::TextBoxBelow, false, 70, 20);
-    timeStretchSlider.setColour(juce::Slider::rotarySliderFillColourId, juce::Colour(0xffb4a5d8));
-    timeStretchSlider.setColour(juce::Slider::thumbColourId, juce::Colour(0xfff5f1e8));
-    timeStretchSlider.setColour(juce::Slider::trackColourId, juce::Colour(0xff4a4a52));
+    styleSlider(timeStretchSlider);
     timeStretchSlider.setTooltip("Playback speed multiplier (0.25x-4x). Independent from pitch when unlocked. 1x = normal speed.");
 
-    timeStretchLabel.setText("Time", juce::dontSendNotification);
-    timeStretchLabel.setFont(juce::Font(juce::FontOptions("Arial", 13.0f, juce::Font::plain)));
-    timeStretchLabel.setColour(juce::Label::textColourId, juce::Colour(0xff9ba4d8));
-    timeStretchLabel.setJustificationType(juce::Justification::centred);
+    timeStretchLabel.setText("Pull", juce::dontSendNotification);
+    styleLabel(timeStretchLabel);
 
     // Time Stretch toggle (pitch/time lock)
     timeStretchToggle.setButtonText("LOCK");
-    timeStretchToggle.setColour(juce::ToggleButton::textColourId, juce::Colour(0xfff5f1e8));
-    timeStretchToggle.setColour(juce::ToggleButton::tickColourId, juce::Colour(0xffb4a5d8));
-    timeStretchToggle.setColour(juce::ToggleButton::tickDisabledColourId, juce::Colour(0xff4a4a52));
+    styleToggle(timeStretchToggle);
     timeStretchToggle.setTooltip("When enabled: pitch and time are locked together (classic behavior). Disabled = independent control.");
 
-    timeStretchToggleLabel.setText("Pitch/Time Lock", juce::dontSendNotification);
-    timeStretchToggleLabel.setFont(juce::Font(juce::FontOptions("Arial", 13.0f, juce::Font::plain)));
-    timeStretchToggleLabel.setColour(juce::Label::textColourId, juce::Colour(0xff9ba4d8));
-    timeStretchToggleLabel.setJustificationType(juce::Justification::centred);
+    timeStretchToggleLabel.setText("Couple", juce::dontSendNotification);
+    styleLabel(timeStretchToggleLabel);
 
     // Reverse Probability slider
-    reverseProbabilitySlider.setSliderStyle(juce::Slider::RotaryHorizontalVerticalDrag);
-    reverseProbabilitySlider.setTextBoxStyle(juce::Slider::TextBoxBelow, false, 70, 20);
-    reverseProbabilitySlider.setColour(juce::Slider::rotarySliderFillColourId, juce::Colour(0xffb4a5d8));
-    reverseProbabilitySlider.setColour(juce::Slider::thumbColourId, juce::Colour(0xfff5f1e8));
-    reverseProbabilitySlider.setColour(juce::Slider::trackColourId, juce::Colour(0xff4a4a52));
+    styleSlider(reverseProbabilitySlider);
     reverseProbabilitySlider.setTooltip("Probability that grains play backwards (0-100%). 0% = all forward, 100% = all reverse, 50% = random mix.");
 
-    reverseProbabilityLabel.setText("Reverse Probability", juce::dontSendNotification);
-    reverseProbabilityLabel.setFont(juce::Font(juce::FontOptions("Arial", 13.0f, juce::Font::plain)));
-    reverseProbabilityLabel.setColour(juce::Label::textColourId, juce::Colour(0xff9ba4d8));
-    reverseProbabilityLabel.setJustificationType(juce::Justification::centred);
+    reverseProbabilityLabel.setText("Return", juce::dontSendNotification);
+    styleLabel(reverseProbabilityLabel);
 
     // Octave Spread slider
-    octaveSpreadSlider.setSliderStyle(juce::Slider::RotaryHorizontalVerticalDrag);
-    octaveSpreadSlider.setTextBoxStyle(juce::Slider::TextBoxBelow, false, 70, 20);
-    octaveSpreadSlider.setColour(juce::Slider::rotarySliderFillColourId, juce::Colour(0xffb4a5d8));
-    octaveSpreadSlider.setColour(juce::Slider::thumbColourId, juce::Colour(0xfff5f1e8));
-    octaveSpreadSlider.setColour(juce::Slider::trackColourId, juce::Colour(0xff4a4a52));
+    styleSlider(octaveSpreadSlider);
     octaveSpreadSlider.setTooltip("Octave shift range (0-2 octaves). Grains randomly shift ±spread. Creates layered harmonic textures.");
 
-    octaveSpreadLabel.setText("Octave Spread", juce::dontSendNotification);
-    octaveSpreadLabel.setFont(juce::Font(juce::FontOptions("Arial", 13.0f, juce::Font::plain)));
-    octaveSpreadLabel.setColour(juce::Label::textColourId, juce::Colour(0xff9ba4d8));
-    octaveSpreadLabel.setJustificationType(juce::Justification::centred);
+    octaveSpreadLabel.setText("Octaves", juce::dontSendNotification);
+    styleLabel(octaveSpreadLabel);
 
     // Octave Probability slider
-    octaveProbabilitySlider.setSliderStyle(juce::Slider::RotaryHorizontalVerticalDrag);
-    octaveProbabilitySlider.setTextBoxStyle(juce::Slider::TextBoxBelow, false, 70, 20);
-    octaveProbabilitySlider.setColour(juce::Slider::rotarySliderFillColourId, juce::Colour(0xffb4a5d8));
-    octaveProbabilitySlider.setColour(juce::Slider::thumbColourId, juce::Colour(0xfff5f1e8));
-    octaveProbabilitySlider.setColour(juce::Slider::trackColourId, juce::Colour(0xff4a4a52));
+    styleSlider(octaveProbabilitySlider);
     octaveProbabilitySlider.setTooltip("Chance of octave shifting per grain (0-100%). Higher = more grains affected by octave spread.");
 
-    octaveProbabilityLabel.setText("Octave Probability", juce::dontSendNotification);
-    octaveProbabilityLabel.setFont(juce::Font(juce::FontOptions("Arial", 13.0f, juce::Font::plain)));
-    octaveProbabilityLabel.setColour(juce::Label::textColourId, juce::Colour(0xff9ba4d8));
-    octaveProbabilityLabel.setJustificationType(juce::Justification::centred);
+    octaveProbabilityLabel.setText("Chance", juce::dontSendNotification);
+    styleLabel(octaveProbabilityLabel);
+
+    // 3rd Octave Probability slider
+    styleSlider(thirdOctaveProbSlider);
+    thirdOctaveProbSlider.setTooltip("Probability of 3rd octave shift when Octave Spread >= 3. Allows extended harmonic range.");
+
+    thirdOctaveProbLabel.setText("High", juce::dontSendNotification);
+    styleLabel(thirdOctaveProbLabel);
+
+    // =========================================================================
+    // Sound Quality / Randomization controls (ported from grains-vst)
+    // =========================================================================
+
+    // Filter Randomization slider
+    styleSlider(filterRandomizationSlider);
+    filterRandomizationSlider.setTooltip("Per-grain filter cutoff randomization (0-100%). Creates timbral variation and warmth.");
+
+    filterRandomizationLabel.setText("Vein", juce::dontSendNotification);
+    styleLabel(filterRandomizationLabel);
+
+    // Detune slider
+    styleSlider(detuneSlider);
+    detuneSlider.setTooltip("Per-grain micro-detuning in cents (0-50). Adds warmth and chorus-like richness.");
+
+    detuneLabel.setText("Blur", juce::dontSendNotification);
+    styleLabel(detuneLabel);
+
+    // Jitter slider
+    styleSlider(jitterSlider);
+    jitterSlider.setTooltip("Timing humanization (0-100%). Higher = more organic/loose timing, lower = tighter sync.");
+
+    jitterLabel.setText("Tremor", juce::dontSendNotification);
+    styleLabel(jitterLabel);
+
+    // Size Randomization slider
+    styleSlider(sizeRandomizationSlider);
+    sizeRandomizationSlider.setTooltip("Per-grain size variation (0-100%). Creates more varied, organic textures.");
+
+    sizeRandomizationLabel.setText("Fray", juce::dontSendNotification);
+    styleLabel(sizeRandomizationLabel);
+
+    // Section header labels for Sound Design tab
+    playbackSectionLabel.setText("TRANSPORT", juce::dontSendNotification);
+    styleHeader(playbackSectionLabel);
+
+    octavesSectionLabel.setText("HARMONIC SHEAR", juce::dontSendNotification);
+    styleHeader(octavesSectionLabel);
+
+    soundQualitySectionLabel.setText("SURFACE NOISE", juce::dontSendNotification);
+    styleHeader(soundQualitySectionLabel);
 }
 
 void GrainsAudioProcessorEditor::AdvancedPanel::paint(juce::Graphics& g)
 {
-    // Semi-transparent dark background
-    g.fillAll(juce::Colour(0xff0f1620).withAlpha(0.95f));
+    g.fillAll(juce::Colour(paper).withAlpha(0.98f));
 
-    // Border on the right side
-    g.setColour(juce::Colour(0xffb4a5d8).withAlpha(0.3f));
-    g.drawLine(static_cast<float>(getWidth()), 0, static_cast<float>(getWidth()), static_cast<float>(getHeight()), 2.0f);
+    for (int x = 12; x < getWidth(); x += 28)
+        for (int y = 14; y < getHeight(); y += 28)
+        {
+            g.setColour(juce::Colour(faintInk));
+            g.fillEllipse(static_cast<float>(x), static_cast<float>(y), 0.9f, 0.9f);
+        }
+
+    auto header = getLocalBounds().removeFromTop(50).reduced(10, 0);
+    g.setColour(juce::Colour(ink));
+    g.drawRect(getLocalBounds(), 2);
+    g.drawLine(0.0f, 49.5f, static_cast<float>(getWidth()), 49.5f, 1.2f);
+
+    auto title = header;
+    title.removeFromLeft(84);
+    g.setFont(juce::Font(juce::FontOptions(9.0f)));
+    g.drawText("REAR PLATE / SPECIMEN CALIBRATION", title, juce::Justification::centredLeft);
 }
 
 void GrainsAudioProcessorEditor::AdvancedPanel::resized()
 {
     // Close button in top left
-    closeButton.setBounds(10, 10, 40, 30);
+    closeButton.setBounds(10, 11, 68, 28);
 
     // Tabbed component takes remaining space
     auto tabbedBounds = getLocalBounds();
@@ -362,8 +520,25 @@ GrainsAudioProcessorEditor::AdvancedPanel::SoundDesignTab::SoundDesignTab(Advanc
     contentComponent.addAndMakeVisible(panel.octaveSpreadLabel);
     contentComponent.addAndMakeVisible(panel.octaveProbabilitySlider);
     contentComponent.addAndMakeVisible(panel.octaveProbabilityLabel);
+    contentComponent.addAndMakeVisible(panel.thirdOctaveProbSlider);
+    contentComponent.addAndMakeVisible(panel.thirdOctaveProbLabel);
     contentComponent.addAndMakeVisible(panel.grainShapeCombo);
     contentComponent.addAndMakeVisible(panel.grainShapeLabel);
+
+    // Sound quality / randomization controls (ported from grains-vst)
+    contentComponent.addAndMakeVisible(panel.filterRandomizationSlider);
+    contentComponent.addAndMakeVisible(panel.filterRandomizationLabel);
+    contentComponent.addAndMakeVisible(panel.detuneSlider);
+    contentComponent.addAndMakeVisible(panel.detuneLabel);
+    contentComponent.addAndMakeVisible(panel.jitterSlider);
+    contentComponent.addAndMakeVisible(panel.jitterLabel);
+    contentComponent.addAndMakeVisible(panel.sizeRandomizationSlider);
+    contentComponent.addAndMakeVisible(panel.sizeRandomizationLabel);
+
+    // Section headers
+    contentComponent.addAndMakeVisible(panel.playbackSectionLabel);
+    contentComponent.addAndMakeVisible(panel.octavesSectionLabel);
+    contentComponent.addAndMakeVisible(panel.soundQualitySectionLabel);
 }
 
 void GrainsAudioProcessorEditor::AdvancedPanel::SoundDesignTab::resized()
@@ -377,52 +552,105 @@ void GrainsAudioProcessorEditor::AdvancedPanel::SoundDesignTab::resized()
     // Fill the tab with the viewport
     viewport.setBounds(getLocalBounds());
 
-    const int margin = 30;
-    const int knobSize = 80;
-    const int labelHeight = 16;
-    const int rowSpacing = 110;  // Spacing between rows
-    // Use full width - don't subtract scrollbar thickness (let viewport handle it)
+    const int margin = 20;
+    const int knobSize = 60;  // Smaller knobs for compact layout
+    const int labelHeight = 14;
+    const int sectionHeaderHeight = 18;
+    const int sectionGap = 25;
+    const int knobRowHeight = knobSize + labelHeight + 8;
     const int contentWidth = getWidth();
 
-    int yPos = margin + 20;
+    int yPos = margin;
 
-    // Calculate column positions (2-column layout)
-    int totalWidth = contentWidth - (2 * margin);
-    int col1X = margin + (totalWidth / 4) - (knobSize / 2);  // Center of left quarter
-    int col2X = margin + (3 * totalWidth / 4) - (knobSize / 2);  // Center of right quarter
+    // Calculate 3-column positions (for knobs)
+    int usableWidth = contentWidth - (2 * margin);
+    int colSpacing = usableWidth / 3;
+    int col1X = margin + colSpacing / 2 - knobSize / 2;
+    int col2X = margin + colSpacing + colSpacing / 2 - knobSize / 2;
+    int col3X = margin + 2 * colSpacing + colSpacing / 2 - knobSize / 2;
 
-    // Row 1: Time Stretch (left) | Reverse Probability (right)
-    panel.timeStretchLabel.setBounds(col1X - 10, yPos, 120, labelHeight);
-    panel.timeStretchSlider.setBounds(col1X, yPos + labelHeight + 5, knobSize, knobSize);
+    // Calculate 4-column positions (for sound quality section)
+    int col4Spacing = usableWidth / 4;
+    int col4_1X = margin + col4Spacing / 2 - knobSize / 2;
+    int col4_2X = margin + col4Spacing + col4Spacing / 2 - knobSize / 2;
+    int col4_3X = margin + 2 * col4Spacing + col4Spacing / 2 - knobSize / 2;
+    int col4_4X = margin + 3 * col4Spacing + col4Spacing / 2 - knobSize / 2;
 
-    panel.reverseProbabilityLabel.setBounds(col2X - 20, yPos, 140, labelHeight);
-    panel.reverseProbabilitySlider.setBounds(col2X, yPos + labelHeight + 5, knobSize, knobSize);
+    // =========================================================================
+    // PLAYBACK SECTION
+    // =========================================================================
+    panel.playbackSectionLabel.setBounds(margin, yPos, usableWidth, sectionHeaderHeight);
+    yPos += sectionHeaderHeight + 8;
 
-    yPos += labelHeight + knobSize + 15;
+    // Row: Time Stretch | Reverse Prob | Grain Shape
+    panel.timeStretchLabel.setBounds(col1X - 5, yPos, knobSize + 10, labelHeight);
+    panel.timeStretchSlider.setBounds(col1X, yPos + labelHeight + 2, knobSize, knobSize);
 
-    // Row 2: Time Stretch Toggle (left, below time stretch)
-    panel.timeStretchToggleLabel.setBounds(col1X - 10, yPos, 120, labelHeight);
-    panel.timeStretchToggle.setBounds(col1X + 5, yPos + labelHeight + 5, 70, 30);
+    panel.reverseProbabilityLabel.setBounds(col2X - 15, yPos, knobSize + 30, labelHeight);
+    panel.reverseProbabilitySlider.setBounds(col2X, yPos + labelHeight + 2, knobSize, knobSize);
 
-    yPos += rowSpacing;
+    panel.grainShapeLabel.setBounds(col3X - 5, yPos, knobSize + 10, labelHeight);
+    panel.grainShapeCombo.setBounds(col3X - 20, yPos + labelHeight + 2 + 15, knobSize + 40, 28);
 
-    // Row 3: Octave Spread (left) | Octave Probability (right)
-    panel.octaveSpreadLabel.setBounds(col1X - 10, yPos, 120, labelHeight);
-    panel.octaveSpreadSlider.setBounds(col1X, yPos + labelHeight + 5, knobSize, knobSize);
+    yPos += knobRowHeight;
 
-    panel.octaveProbabilityLabel.setBounds(col2X - 20, yPos, 140, labelHeight);
-    panel.octaveProbabilitySlider.setBounds(col2X, yPos + labelHeight + 5, knobSize, knobSize);
+    // Pitch/Time Lock toggle (below Time Stretch)
+    panel.timeStretchToggleLabel.setBounds(col1X - 15, yPos, knobSize + 30, labelHeight);
+    panel.timeStretchToggle.setBounds(col1X - 5, yPos + labelHeight + 2, 70, 24);
 
-    yPos += rowSpacing;
+    yPos += labelHeight + 30 + sectionGap;
 
-    // Row 4: Grain Shape (centered dropdown)
-    int centerX = contentWidth / 2;
-    panel.grainShapeLabel.setBounds(centerX - 60, yPos, 120, labelHeight);
-    panel.grainShapeCombo.setBounds(centerX - 100, yPos + labelHeight + 5, 200, 32);
+    // Store divider position (between Playback and Octaves)
+    divider1Y = yPos - sectionGap / 2;
+
+    // =========================================================================
+    // OCTAVES SECTION
+    // =========================================================================
+    panel.octavesSectionLabel.setBounds(margin, yPos, usableWidth, sectionHeaderHeight);
+    yPos += sectionHeaderHeight + 8;
+
+    // Row: Octave Spread | Octave Prob | 3rd Oct Prob
+    panel.octaveSpreadLabel.setBounds(col1X - 15, yPos, knobSize + 30, labelHeight);
+    panel.octaveSpreadSlider.setBounds(col1X, yPos + labelHeight + 2, knobSize, knobSize);
+
+    panel.octaveProbabilityLabel.setBounds(col2X - 15, yPos, knobSize + 30, labelHeight);
+    panel.octaveProbabilitySlider.setBounds(col2X, yPos + labelHeight + 2, knobSize, knobSize);
+
+    panel.thirdOctaveProbLabel.setBounds(col3X - 15, yPos, knobSize + 30, labelHeight);
+    panel.thirdOctaveProbSlider.setBounds(col3X, yPos + labelHeight + 2, knobSize, knobSize);
+
+    yPos += knobRowHeight + sectionGap;
+
+    // Store divider position (between Octaves and Sound Quality)
+    divider2Y = yPos - sectionGap / 2;
+
+    // =========================================================================
+    // SOUND QUALITY SECTION (4-column layout)
+    // =========================================================================
+    panel.soundQualitySectionLabel.setBounds(margin, yPos, usableWidth, sectionHeaderHeight);
+    yPos += sectionHeaderHeight + 8;
+
+    // Row: Filter Random | Detune | Jitter | Size Random
+    panel.filterRandomizationLabel.setBounds(col4_1X - 15, yPos, knobSize + 30, labelHeight);
+    panel.filterRandomizationSlider.setBounds(col4_1X, yPos + labelHeight + 2, knobSize, knobSize);
+
+    panel.detuneLabel.setBounds(col4_2X - 5, yPos, knobSize + 10, labelHeight);
+    panel.detuneSlider.setBounds(col4_2X, yPos + labelHeight + 2, knobSize, knobSize);
+
+    panel.jitterLabel.setBounds(col4_3X - 5, yPos, knobSize + 10, labelHeight);
+    panel.jitterSlider.setBounds(col4_3X, yPos + labelHeight + 2, knobSize, knobSize);
+
+    panel.sizeRandomizationLabel.setBounds(col4_4X - 15, yPos, knobSize + 30, labelHeight);
+    panel.sizeRandomizationSlider.setBounds(col4_4X, yPos + labelHeight + 2, knobSize, knobSize);
+
+    yPos += knobRowHeight + margin;
 
     // Calculate total content height needed
-    int totalHeight = yPos + labelHeight + 32 + margin;  // label + combo + margin
+    int totalHeight = yPos;
     contentComponent.setSize(contentWidth, totalHeight);
+
+    // Repaint to draw dividers
+    contentComponent.repaint();
 }
 
 //==============================================================================
@@ -431,11 +659,20 @@ void GrainsAudioProcessorEditor::AdvancedPanel::SoundDesignTab::resized()
 GrainsAudioProcessorEditor::GrainsAudioProcessorEditor (GrainsAudioProcessor& p)
     : AudioProcessorEditor (&p), audioProcessor (p), tooltipWindow(this, 1500)
 {
-    // Set up load sample button - Hypnos sleepy theme
-    loadSampleButton.setButtonText("Load Sample");
+    instrumentSerifRegular = juce::Typeface::createSystemTypefaceFor(
+        BinaryData::InstrumentSerifRegular_ttf,
+        BinaryData::InstrumentSerifRegular_ttfSize);
+    instrumentSerifItalic = juce::Typeface::createSystemTypefaceFor(
+        BinaryData::InstrumentSerifItalic_ttf,
+        BinaryData::InstrumentSerifItalic_ttfSize);
+    jetBrainsMono = juce::Typeface::createSystemTypefaceFor(
+        BinaryData::JetBrainsMonoRegular_ttf,
+        BinaryData::JetBrainsMonoRegular_ttfSize);
+
+    // Set up load sample button
+    loadSampleButton.setButtonText("+ Load Sample");
     loadSampleButton.addListener(this);
-    loadSampleButton.setColour(juce::TextButton::buttonColourId, juce::Colour(0xffb4a5d8));  // Soft Lavender
-    loadSampleButton.setColour(juce::TextButton::textColourOffId, juce::Colour(0xff1a2332));  // Midnight Blue
+    loadSampleButton.setLookAndFeel(&monoPrintLookAndFeel);
     loadSampleButton.setClickingTogglesState(false);
     loadSampleButton.setEnabled(true);
     loadSampleButton.setTooltip("Load an audio file (.wav, .aif, .mp3) to use as the grain source.");
@@ -451,15 +688,15 @@ GrainsAudioProcessorEditor::GrainsAudioProcessorEditor (GrainsAudioProcessor& p)
     addAndMakeVisible(mainViewport);
 
     // Setup section labels
-    grainSourceSectionLabel.setText("GRAIN DESIGN", juce::dontSendNotification);
-    grainSourceSectionLabel.setFont(juce::Font(juce::FontOptions("Arial", 11.0f, juce::Font::plain)));
-    grainSourceSectionLabel.setColour(juce::Label::textColourId, juce::Colour(0xff9ba4d8).withAlpha(0.6f));
+    grainSourceSectionLabel.setText("GRAIN ENGINE", juce::dontSendNotification);
+    grainSourceSectionLabel.setFont(monoFont(jetBrainsMono, 8.0f));
+    grainSourceSectionLabel.setColour(juce::Label::textColourId, juce::Colour(quietInk));
     grainSourceSectionLabel.setJustificationType(juce::Justification::left);
     mainContentComponent.addAndMakeVisible(grainSourceSectionLabel);
 
     outputSectionLabel.setText("OUTPUT", juce::dontSendNotification);
-    outputSectionLabel.setFont(juce::Font(juce::FontOptions("Arial", 11.0f, juce::Font::plain)));
-    outputSectionLabel.setColour(juce::Label::textColourId, juce::Colour(0xff9ba4d8).withAlpha(0.6f));
+    outputSectionLabel.setFont(monoFont(jetBrainsMono, 8.0f));
+    outputSectionLabel.setColour(juce::Label::textColourId, juce::Colour(quietInk));
     outputSectionLabel.setJustificationType(juce::Justification::left);
     mainContentComponent.addAndMakeVisible(outputSectionLabel);
 
@@ -478,42 +715,42 @@ GrainsAudioProcessorEditor::GrainsAudioProcessorEditor (GrainsAudioProcessor& p)
 
     // Set up all sliders and labels
     setupSlider(positionSlider, "position");
-    setupLabel(positionLabel, "Position");
+    setupLabel(positionLabel, "Focus");
     positionSlider.setTooltip("Playback position in the sample (0-100%). Shows as a window overlay on the waveform.");
     positionAttachment.reset(new SliderAttachment(audioProcessor.getAPVTS(), "position", positionSlider));
 
     setupSlider(spraySlider, "spray");
-    setupLabel(sprayLabel, "Spray");
+    setupLabel(sprayLabel, "Scatter");
     spraySlider.setTooltip("Randomizes grain position around the main Position value. Higher values = more variation.");
     sprayAttachment.reset(new SliderAttachment(audioProcessor.getAPVTS(), "spray", spraySlider));
 
     setupSlider(grainSizeSlider, "grainSize");
-    setupLabel(grainSizeLabel, "Size");
+    setupLabel(grainSizeLabel, "Thread");
     grainSizeSlider.setTooltip("Duration of each grain in milliseconds (5-500ms). Shorter = more granular, longer = smoother.");
     grainSizeAttachment.reset(new SliderAttachment(audioProcessor.getAPVTS(), "grainSize", grainSizeSlider));
 
     setupSlider(densitySlider, "density");
-    setupLabel(densityLabel, "Density");
+    setupLabel(densityLabel, "Cloud");
     densitySlider.setTooltip("Number of grains per second (1-100). Higher values create denser, more continuous textures.");
     densityAttachment.reset(new SliderAttachment(audioProcessor.getAPVTS(), "density", densitySlider));
 
     // Output section sliders (pink color #f472b6)
     setupSlider(pitchSlider, "pitch");
-    setupLabel(pitchLabel, "Pitch");
+    setupLabel(pitchLabel, "Lift");
     pitchSlider.setTooltip("Pitch shift in semitones (-24 to +24). Follows MIDI note pitch automatically.");
     pitchSlider.setColour(juce::Slider::rotarySliderFillColourId, juce::Colour(0xfff472b6));  // Pink
     pitchSlider.setColour(juce::Slider::thumbColourId, juce::Colour(0xfff9a8d4));  // Light pink accent
     pitchAttachment.reset(new SliderAttachment(audioProcessor.getAPVTS(), "pitch", pitchSlider));
 
     setupSlider(panSlider, "pan");
-    setupLabel(panLabel, "Pan");
+    setupLabel(panLabel, "Drift");
     panSlider.setTooltip("Stereo position of grains. -100 = left, 0 = center, +100 = right.");
     panSlider.setColour(juce::Slider::rotarySliderFillColourId, juce::Colour(0xfff472b6));  // Pink
     panSlider.setColour(juce::Slider::thumbColourId, juce::Colour(0xfff9a8d4));  // Light pink accent
     panAttachment.reset(new SliderAttachment(audioProcessor.getAPVTS(), "pan", panSlider));
 
     setupSlider(gainSlider, "gain");
-    setupLabel(gainLabel, "Gain");
+    setupLabel(gainLabel, "Exposure");
     gainSlider.setTooltip("Output volume in decibels (-60 to +12 dB). Use MIDI velocity for per-note dynamics.");
     gainSlider.setColour(juce::Slider::rotarySliderFillColourId, juce::Colour(0xfff472b6));  // Pink
     gainSlider.setColour(juce::Slider::thumbColourId, juce::Colour(0xfff9a8d4));  // Light pink accent
@@ -521,7 +758,7 @@ GrainsAudioProcessorEditor::GrainsAudioProcessorEditor (GrainsAudioProcessor& p)
 
     // Phase 2 parameters
     setupSlider(panSpreadSlider, "panSpread");
-    setupLabel(panSpreadLabel, "Pan Spread");
+    setupLabel(panSpreadLabel, "Halo");
     panSpreadSlider.setTooltip("Randomizes pan position for each grain (0-100%). Creates wider stereo field.");
     panSpreadSlider.setColour(juce::Slider::rotarySliderFillColourId, juce::Colour(0xfff472b6));  // Pink
     panSpreadSlider.setColour(juce::Slider::thumbColourId, juce::Colour(0xfff9a8d4));  // Light pink accent
@@ -529,9 +766,9 @@ GrainsAudioProcessorEditor::GrainsAudioProcessorEditor (GrainsAudioProcessor& p)
 
     // Reverse toggle (simple on/off)
     reverseToggle.setButtonText("REV");
-    reverseToggle.setColour(juce::ToggleButton::textColourId, juce::Colour(0xfff5f1e8));
-    reverseToggle.setColour(juce::ToggleButton::tickColourId, juce::Colour(0xffb4a5d8));
-    reverseToggle.setColour(juce::ToggleButton::tickDisabledColourId, juce::Colour(0xff4a4a52));
+    reverseToggle.setColour(juce::ToggleButton::textColourId, juce::Colour(ink));
+    reverseToggle.setColour(juce::ToggleButton::tickColourId, juce::Colour(ink));
+    reverseToggle.setColour(juce::ToggleButton::tickDisabledColourId, juce::Colour(quietInk));
     mainContentComponent.addAndMakeVisible(reverseToggle);
     setupLabel(reverseLabel, "Reverse");
     reverseAttachment.reset(new ButtonAttachment(audioProcessor.getAPVTS(), "reverseEnabled", reverseToggle));
@@ -546,48 +783,46 @@ GrainsAudioProcessorEditor::GrainsAudioProcessorEditor (GrainsAudioProcessor& p)
 
     // Filter section
     filterSectionLabel.setText("FILTER", juce::dontSendNotification);
-    filterSectionLabel.setFont(juce::Font(juce::FontOptions("Arial", 11.0f, juce::Font::plain)));
-    filterSectionLabel.setColour(juce::Label::textColourId, juce::Colour(0xff9ba4d8).withAlpha(0.6f));
+    filterSectionLabel.setFont(monoFont(jetBrainsMono, 8.0f));
+    filterSectionLabel.setColour(juce::Label::textColourId, juce::Colour(quietInk));
     filterSectionLabel.setJustificationType(juce::Justification::left);
     mainContentComponent.addAndMakeVisible(filterSectionLabel);
 
     // Low-pass cutoff
     setupSlider(lpFilterCutoffSlider, "lpFilterCutoff");
-    setupLabel(lpFilterCutoffLabel, "LP Cutoff");
+    setupLabel(lpFilterCutoffLabel, "Veil");
     lpFilterCutoffSlider.setTooltip("Low-pass cutoff frequency (20Hz - 20kHz). Frequencies above this are attenuated.");
     lpFilterCutoffAttachment.reset(new SliderAttachment(audioProcessor.getAPVTS(), "lpFilterCutoff", lpFilterCutoffSlider));
 
     // Low-pass resonance
     setupSlider(lpFilterResonanceSlider, "lpFilterResonance");
-    setupLabel(lpFilterResonanceLabel, "LP Res");
+    setupLabel(lpFilterResonanceLabel, "Ring");
     lpFilterResonanceSlider.setTooltip("Low-pass resonance (Q factor). Emphasizes frequencies near the cutoff. Higher = sharper peak.");
     lpFilterResonanceAttachment.reset(new SliderAttachment(audioProcessor.getAPVTS(), "lpFilterResonance", lpFilterResonanceSlider));
 
     // High-pass cutoff
     setupSlider(hpFilterCutoffSlider, "hpFilterCutoff");
-    setupLabel(hpFilterCutoffLabel, "HP Cutoff");
+    setupLabel(hpFilterCutoffLabel, "Floor");
     hpFilterCutoffSlider.setTooltip("High-pass cutoff frequency (20Hz - 20kHz). Frequencies below this are attenuated.");
     hpFilterCutoffAttachment.reset(new SliderAttachment(audioProcessor.getAPVTS(), "hpFilterCutoff", hpFilterCutoffSlider));
 
     // High-pass resonance
     setupSlider(hpFilterResonanceSlider, "hpFilterResonance");
-    setupLabel(hpFilterResonanceLabel, "HP Res");
+    setupLabel(hpFilterResonanceLabel, "Edge");
     hpFilterResonanceSlider.setTooltip("High-pass resonance (Q factor). Emphasizes frequencies near the cutoff. Higher = sharper peak.");
     hpFilterResonanceAttachment.reset(new SliderAttachment(audioProcessor.getAPVTS(), "hpFilterResonance", hpFilterResonanceSlider));
 
     // Advanced panel toggle button (styled with more contrast)
-    advancedToggleButton.setButtonText("Advanced");
+    advancedToggleButton.setButtonText("Rear Plate");
     advancedToggleButton.setTooltip("Open advanced panel for LFO modulation and sound design parameters.");
     advancedToggleButton.addListener(this);
-    advancedToggleButton.setColour(juce::TextButton::buttonColourId, juce::Colour(0xff4a4a52));
-    advancedToggleButton.setColour(juce::TextButton::buttonOnColourId, juce::Colour(0xffb4a5d8).withAlpha(0.3f));
-    advancedToggleButton.setColour(juce::TextButton::textColourOffId, juce::Colour(0xffb4a5d8));
-    advancedToggleButton.setColour(juce::TextButton::textColourOnId, juce::Colour(0xfff5f1e8));
+    advancedToggleButton.setLookAndFeel(&monoPrintLookAndFeel);
     advancedToggleButton.setClickingTogglesState(false);
     addAndMakeVisible(advancedToggleButton);
 
     // Create advanced panel overlay (initially hidden - default closed)
     advancedPanel = std::make_unique<AdvancedPanel>();
+    advancedPanel->setLookAndFeel(&monoPrintLookAndFeel);
     addAndMakeVisible(advancedPanel.get());
     advancedPanel->setVisible(false);  // Start hidden
 
@@ -624,6 +859,22 @@ GrainsAudioProcessorEditor::GrainsAudioProcessorEditor (GrainsAudioProcessor& p)
     octaveProbabilityAttachment.reset(new SliderAttachment(
         audioProcessor.getAPVTS(), "octaveProbability", advancedPanel->octaveProbabilitySlider));
 
+    thirdOctaveProbAttachment.reset(new SliderAttachment(
+        audioProcessor.getAPVTS(), "thirdOctaveProb", advancedPanel->thirdOctaveProbSlider));
+
+    // Sound quality / randomization attachments (ported from grains-vst)
+    filterRandomizationAttachment.reset(new SliderAttachment(
+        audioProcessor.getAPVTS(), "filterRandomization", advancedPanel->filterRandomizationSlider));
+
+    detuneAttachment.reset(new SliderAttachment(
+        audioProcessor.getAPVTS(), "detuneCents", advancedPanel->detuneSlider));
+
+    jitterAttachment.reset(new SliderAttachment(
+        audioProcessor.getAPVTS(), "jitterPercent", advancedPanel->jitterSlider));
+
+    sizeRandomizationAttachment.reset(new SliderAttachment(
+        audioProcessor.getAPVTS(), "grainSizeRandomization", advancedPanel->sizeRandomizationSlider));
+
     timeStretchAttachment.reset(new SliderAttachment(
         audioProcessor.getAPVTS(), "timeStretch", advancedPanel->timeStretchSlider));
 
@@ -633,16 +884,16 @@ GrainsAudioProcessorEditor::GrainsAudioProcessorEditor (GrainsAudioProcessor& p)
     advancedPanel->grainShapeCombo.addItem("Trapezoid", 3);
     advancedPanel->grainShapeCombo.addItem("Exponential", 4);
     advancedPanel->grainShapeCombo.addItem("Gaussian", 5);
-    advancedPanel->grainShapeCombo.setColour(juce::ComboBox::backgroundColourId, juce::Colour(0xff1a2332));
-    advancedPanel->grainShapeCombo.setColour(juce::ComboBox::textColourId, juce::Colour(0xfff5f1e8));
-    advancedPanel->grainShapeCombo.setColour(juce::ComboBox::outlineColourId, juce::Colour(0xff4a4a52));
-    advancedPanel->grainShapeCombo.setColour(juce::ComboBox::arrowColourId, juce::Colour(0xffb4a5d8));
+    advancedPanel->grainShapeCombo.setColour(juce::ComboBox::backgroundColourId, juce::Colour(paper));
+    advancedPanel->grainShapeCombo.setColour(juce::ComboBox::textColourId, juce::Colour(ink));
+    advancedPanel->grainShapeCombo.setColour(juce::ComboBox::outlineColourId, juce::Colour(ink));
+    advancedPanel->grainShapeCombo.setColour(juce::ComboBox::arrowColourId, juce::Colour(ink));
     advancedPanel->grainShapeCombo.setTooltip("Envelope shape for each grain. Hann = smooth, Triangle = sharper, Exponential = natural decay.");
 
-    advancedPanel->grainShapeLabel.setText("Shape", juce::dontSendNotification);
-    advancedPanel->grainShapeLabel.setColour(juce::Label::textColourId, juce::Colour(0xfff5f1e8).withAlpha(0.6f));
+    advancedPanel->grainShapeLabel.setText("Cut", juce::dontSendNotification);
+    advancedPanel->grainShapeLabel.setColour(juce::Label::textColourId, juce::Colour(quietInk));
     advancedPanel->grainShapeLabel.setJustificationType(juce::Justification::centred);
-    advancedPanel->grainShapeLabel.setFont(juce::Font("Arial", 14.0f, juce::Font::plain));
+    advancedPanel->grainShapeLabel.setFont(monoFont(jetBrainsMono, 8.0f));
 
     grainShapeAttachment.reset(new ComboBoxAttachment(audioProcessor.getAPVTS(), "grainShape", advancedPanel->grainShapeCombo));
 
@@ -676,45 +927,59 @@ GrainsAudioProcessorEditor::~GrainsAudioProcessorEditor()
 {
     stopTimer();
     loadSampleButton.removeListener(this);
+    loadSampleButton.setLookAndFeel(nullptr);
     advancedToggleButton.removeListener(this);
+    advancedToggleButton.setLookAndFeel(nullptr);
+    advancedPanel->setLookAndFeel(nullptr);
     advancedPanel->timeStretchToggle.removeListener(this);
     advancedPanel->closeButton.removeListener(this);
+
+    for (auto* child : mainContentComponent.getChildren())
+        if (auto* slider = dynamic_cast<juce::Slider*>(child))
+            slider->setLookAndFeel(nullptr);
+
+    for (auto* child : getChildren())
+        if (auto* button = dynamic_cast<juce::TextButton*>(child))
+            button->setLookAndFeel(nullptr);
 }
 
 //==============================================================================
 void GrainsAudioProcessorEditor::paint (juce::Graphics& g)
 {
-    // Somnia sleepy nighttime background - gradient from midnight blue to darker
-    juce::ColourGradient gradient(juce::Colour(0xff1a2332), 0, 0,
-                                  juce::Colour(0xff0f1620), 0, static_cast<float>(getHeight()),
-                                  false);
-    g.setGradientFill(gradient);
-    g.fillAll();
+    g.fillAll(juce::Colour(paper));
 
-    // Title bar with subtle depth
-    g.setColour(juce::Colour(0xff2d3e52).withAlpha(0.5f));
-    g.fillRect(0, 0, getWidth(), 60);
+    for (int x = 0; x < getWidth(); x += 32)
+        for (int y = 0; y < getHeight(); y += 32)
+        {
+            g.setColour(juce::Colour(faintInk));
+            g.fillEllipse(static_cast<float>(x), static_cast<float>(y), 1.0f, 1.0f);
+        }
 
-    // Plugin title - Somnia
-    g.setColour(juce::Colour(0xfff5f1e8));  // Cream
-    g.setFont(juce::Font("Arial", 32.0f, juce::Font::plain));
-    g.drawText("Somnia", 20, 10, 200, 40, juce::Justification::left);
+    auto header = getLocalBounds().removeFromTop(60);
+    g.setColour(juce::Colour(ink));
+    g.drawLine(0.0f, static_cast<float>(header.getBottom()) - 0.5f,
+               static_cast<float>(getWidth()), static_cast<float>(header.getBottom()) - 0.5f, 1.4f);
 
-    // Version with lavender accent
-    g.setFont(juce::Font("Arial", 12.0f, juce::Font::plain));
-    g.setColour(juce::Colour(0xffb4a5d8).withAlpha(0.7f));  // Soft Lavender
-    g.drawText("v1.0 BETA", 20, 45, 200, 15, juce::Justification::left);
+    auto titleArea = header.reduced(22, 0);
+    g.setFont(monoFont(jetBrainsMono, 9.0f));
+    g.drawText("PLATE I - GRANULAR MICROSCOPE", titleArea.removeFromLeft(230),
+               juce::Justification::centredLeft);
+
+    g.setFont(serifFont(instrumentSerifItalic, 33.0f));
+    g.drawText("Lamina", titleArea.removeFromLeft(180), juce::Justification::centredLeft);
+
+    g.setFont(monoFont(jetBrainsMono, 8.0f));
+    g.drawText("SPECIMEN / AUDIO SLIDE", titleArea, juce::Justification::centredLeft);
 
     // Draw drag-over overlay when dragging a file
     if (isDraggingFile)
     {
         g.setColour(juce::Colour(0xffb4a5d8).withAlpha(0.3f));
         g.fillAll();
-        g.setColour(juce::Colour(0xffb4a5d8));
+        g.setColour(juce::Colour(ink));
         g.drawRect(getLocalBounds().reduced(10), 3);
-        g.setColour(juce::Colour(0xfff5f1e8));
-        g.setFont(24.0f);
-        g.drawText("Drop audio file here", getLocalBounds(), juce::Justification::centred);
+        g.setFont(serifFont(instrumentSerifItalic, 28.0f));
+        g.drawText("Drop specimen here", getLocalBounds(), juce::Justification::centred);
     }
 }
 
@@ -892,11 +1157,13 @@ void GrainsAudioProcessorEditor::resized()
 
     mainContentComponent.setColumnBounds(grainDesignSection, filtersSection, outputSection);
 
-    // Position advanced panel overlay (left side, full height, 600px wide)
-    // Only resize if visible to reduce unnecessary layout calculations
-    if (advancedPanel != nullptr && advancedPanel->isVisible())
+    // Position advanced panel overlay (left side, full height)
+    // Always position it so it's ready when toggled visible
+    if (advancedPanel != nullptr)
     {
-        advancedPanel->setBounds(0, 0, 600, getHeight());
+        // Panel width adapts to window size (max 550px, min 450px)
+        int panelWidth = juce::jlimit(450, 550, getWidth() - 50);
+        advancedPanel->setBounds(0, 0, panelWidth, getHeight());
     }
 }
 
@@ -1109,15 +1376,16 @@ void GrainsAudioProcessorEditor::loadAudioFile (const juce::File& file)
 //==============================================================================
 void GrainsAudioProcessorEditor::setupSlider (juce::Slider& slider, const juce::String& paramID)
 {
-    // Somnia sleepy theme - rotary knobs (reduced size by ~15% for professional look)
+    juce::ignoreUnused(paramID);
     slider.setSliderStyle(juce::Slider::RotaryHorizontalVerticalDrag);
-    slider.setTextBoxStyle(juce::Slider::TextBoxBelow, false, 50, 16);  // Compact text box
-    slider.setColour(juce::Slider::rotarySliderFillColourId, juce::Colour(0xffb4a5d8));  // Soft Lavender
-    slider.setColour(juce::Slider::rotarySliderOutlineColourId, juce::Colour(0xff4a4a52));  // Warm Charcoal
-    slider.setColour(juce::Slider::thumbColourId, juce::Colour(0xffd4a5a5));  // Dusty Rose accent
-    slider.setColour(juce::Slider::textBoxTextColourId, juce::Colour(0xfff5f1e8));  // Cream
-    slider.setColour(juce::Slider::textBoxBackgroundColourId, juce::Colour(0xff1a2332));  // Midnight Blue
-    slider.setColour(juce::Slider::textBoxOutlineColourId, juce::Colour(0xff4a4a52));  // Warm Charcoal
+    slider.setTextBoxStyle(juce::Slider::NoTextBox, false, 0, 0);
+    slider.setRotaryParameters(juce::MathConstants<float>::pi * 0.75f,
+                               juce::MathConstants<float>::pi * 2.25f,
+                               true);
+    slider.setLookAndFeel(&monoPrintLookAndFeel);
+    slider.setColour(juce::Slider::textBoxTextColourId, juce::Colour(ink));
+    slider.setColour(juce::Slider::textBoxBackgroundColourId, juce::Colours::transparentBlack);
+    slider.setColour(juce::Slider::textBoxOutlineColourId, juce::Colours::transparentBlack);
 
     slider.addListener(this);
     mainContentComponent.addAndMakeVisible(slider);
@@ -1126,9 +1394,9 @@ void GrainsAudioProcessorEditor::setupSlider (juce::Slider& slider, const juce::
 void GrainsAudioProcessorEditor::setupLabel (juce::Label& label, const juce::String& text)
 {
     label.setText(text, juce::dontSendNotification);
-    label.setColour(juce::Label::textColourId, juce::Colour(0xfff5f1e8).withAlpha(0.6f));  // Cream with 60% opacity
+    label.setColour(juce::Label::textColourId, juce::Colour(quietInk));
     label.setJustificationType(juce::Justification::centred);
-    label.setFont(juce::Font("Arial", 14.0f, juce::Font::plain));
+    label.setFont(monoFont(jetBrainsMono, 7.4f));
     mainContentComponent.addAndMakeVisible(label);
 }
 

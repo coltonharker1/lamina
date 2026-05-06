@@ -24,7 +24,7 @@ public:
     //==============================================================================
     void paint(juce::Graphics& g) override
     {
-        // Somnia sleepy theme - darker midnight blue background
+        // Lamina sleepy theme - darker midnight blue background
         g.fillAll(juce::Colour(0xff0f1620));
 
         // Subtle warm charcoal border
@@ -143,7 +143,7 @@ private:
 
         waveformPath.closeSubPath();
 
-        // Fill waveform with soft lavender glow - Somnia theme
+        // Fill waveform with soft lavender glow - Lamina theme
         g.setColour(juce::Colour(0xffb4a5d8).withAlpha(0.25f));
         g.fillPath(waveformPath);
 

@@ -1,15 +1,15 @@
-Welcome to Somnia v1.0
+Welcome to Lamina v1.0
 
-Somnia is a professional grain synthesis instrument for music production.
+Lamina is a professional grain synthesis instrument for music production.
 
 This installer will install:
 • Audio Unit (AU) for Logic Pro, GarageBand
 • VST3 for Ableton Live, FL Studio, and other DAWs
 
 Installation locations:
-• /Library/Audio/Plug-Ins/Components/Somnia.component
-• /Library/Audio/Plug-Ins/VST3/Somnia.vst3
+• /Library/Audio/Plug-Ins/Components/Lamina.component
+• /Library/Audio/Plug-Ins/VST3/Lamina.vst3
 
 After installation, restart your DAW or rescan plugins.
 
-Project Sonaris © 2024
+Project Sonorous © 2024

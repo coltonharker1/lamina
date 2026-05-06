@@ -5,8 +5,7 @@
 #include "Envelope.h"
 #include <vector>
 #include <random>
-#include <set>
-#include <map>
+#include <array>
 
 //==============================================================================
 /**
@@ -38,20 +37,22 @@ public:
         panDistribution = std::uniform_real_distribution<float>(-1.0f, 1.0f);
         reverseDistribution = std::uniform_real_distribution<float>(0.0f, 100.0f);
         octaveDistribution = std::uniform_real_distribution<float>(0.0f, 100.0f);
+        filterDistribution = std::uniform_real_distribution<float>(0.0f, 1.0f);
+        detuneDistribution = std::uniform_real_distribution<float>(-1.0f, 1.0f);
+        sizeDistribution = std::uniform_real_distribution<float>(-1.0f, 1.0f);
     }
 
     //==============================================================================
     /** Prepare for playback */
     void prepare(double sampleRate, int samplesPerBlock)
     {
+        juce::ignoreUnused(samplesPerBlock);
         currentSampleRate = sampleRate;
         samplesToNextGrain = 0.0;
 
-        // Set sample rate for all envelopes
-        for (auto& pair : noteEnvelopes)
-        {
-            pair.second.setSampleRate(sampleRate);
-        }
+        // Set sample rate for all envelopes (the array is fixed-size, no allocations)
+        for (auto& env : envelopes)
+            env.setSampleRate(sampleRate);
     }
 
     /** Set envelope parameters */
@@ -60,9 +61,12 @@ public:
     void setEnvelopeSustain(float level01) { envelopeSustain = level01; }
     void setEnvelopeRelease(float timeMs) { envelopeRelease = timeMs; }
 
-    /** Set the source audio buffer */
+    /** Set the source audio buffer (thread-safe) */
     void setSourceBuffer(const juce::AudioBuffer<float>& buffer)
     {
+        // CRITICAL: Clear all active grains before changing buffer
+        // This prevents audio thread from reading invalid memory
+        clearAllGrains();
         sourceBuffer = &buffer;
     }
 
@@ -72,19 +76,34 @@ public:
         return sourceBuffer != nullptr && sourceBuffer->getNumSamples() > 0;
     }
 
+    /** Clear all active grains (for safe buffer swapping) */
+    void clearAllGrains()
+    {
+        for (auto& voice : grainVoices)
+        {
+            voice.deactivate();
+        }
+    }
+
     //==============================================================================
     /** Note on - start playing grains */
     void noteOn(int midiNote, int velocity)
     {
         juce::ignoreUnused(velocity);  // Could use for volume control later
-        activeNotes.insert(midiNote);
+        if (midiNote < 0 || midiNote >= 128) return;
 
-        // Set the current note for pitch tracking
-        if (activeNotes.size() == 1)
+        if (!activeNoteFlags[midiNote])
+        {
+            activeNoteFlags[midiNote] = true;
+            ++activeNoteCount;
+        }
+
+        // Set the current note for pitch tracking when this is the only active note
+        if (activeNoteCount == 1)
             currentMidiNote = midiNote;
 
-        // Create and trigger envelope for this note
-        auto& envelope = noteEnvelopes[midiNote];
+        // Trigger this note's envelope (array slot, no allocation)
+        auto& envelope = envelopes[midiNote];
         envelope.setSampleRate(currentSampleRate);
         envelope.setAttack(envelopeAttack);
         envelope.setDecay(envelopeDecay);
@@ -96,21 +115,17 @@ public:
     /** Note off - trigger envelope release (grains continue during release) */
     void noteOff(int midiNote)
     {
-        // DON'T remove from activeNotes yet - keep generating grains during release!
-        // Note will be removed when envelope becomes inactive (see cleanup in process())
+        if (midiNote < 0 || midiNote >= 128) return;
 
-        // Trigger envelope release for this note
-        auto it = noteEnvelopes.find(midiNote);
-        if (it != noteEnvelopes.end())
-        {
-            it->second.noteOff();
-        }
+        // DON'T clear activeNoteFlags yet — keep generating grains during release!
+        // Note will be removed when envelope becomes Idle (see cleanup in process())
+        envelopes[midiNote].noteOff();
     }
 
     /** Check if any notes are active */
     bool hasActiveNotes() const
     {
-        return !activeNotes.empty();
+        return activeNoteCount > 0;
     }
 
     /** Get pitch offset in semitones from MIDI note (C4 = 60 = no offset) */
@@ -149,13 +164,23 @@ public:
                  float reversePercent,       // 0-100: reverse probability
                  float timeStretch,          // 0.25-4: time stretch multiplier
                  int grainShape,             // 0-4: grain envelope shape
-                 float octaveSpread,         // 0-2: octave shift range
-                 float octaveProbability)    // 0-100: probability of octave shift
+                 float octaveSpread,         // 0-3: octave shift range
+                 float octaveProbability,    // 0-100: probability of octave shift
+                 float thirdOctaveProb = 0.0f,      // 0-100: probability of 3rd octave
+                 float filterRandomization = 0.0f,  // 0-100: per-grain filter cutoff randomization
+                 float detuneCents = 0.0f,          // 0-50: per-grain micro-detuning in cents
+                 float jitterPercent = 0.0f,        // 0-100: timing humanization
+                 float grainSizeRandomization = 0.0f) // 0-100: per-grain size variation
     {
         if (!hasSource())
             return;
 
         const int numSamples = outputBuffer.getNumSamples();
+        const int numChannels = outputBuffer.getNumChannels();
+
+        // Get direct buffer pointers for faster writes (avoids addSample overhead)
+        float* leftOutputPtr = outputBuffer.getWritePointer(0);
+        float* rightOutputPtr = numChannels >= 2 ? outputBuffer.getWritePointer(1) : leftOutputPtr;
 
         // Calculate base density (samples between grain starts)
         double baseSamplesPerGrain = currentSampleRate / densityGrainsPerSec;
@@ -186,10 +211,9 @@ public:
         // Time stretch < 1 = faster playback (compressed) → grains finish sooner
         // Tail duration = grainSizeMs * timeStretch (to account for playback speed)
         float tailDuration = grainSizeMs * timeStretch;
-        for (auto& pair : noteEnvelopes)
-        {
-            pair.second.setTailTime(tailDuration);
-        }
+        for (int note = 0; note < 128; ++note)
+            if (activeNoteFlags[note])
+                envelopes[note].setTailTime(tailDuration);
 
         for (int sample = 0; sample < numSamples; ++sample)
         {
@@ -199,10 +223,10 @@ public:
             {
                 // Check if any notes are NOT in tail phase (still generating)
                 bool shouldGenerateGrains = false;
-                for (const auto& pair : noteEnvelopes)
+                for (int note = 0; note < 128; ++note)
                 {
-                    auto state = pair.second.getState();
-                    // Generate during Attack, Decay, Sustain, and Release - stop only at Tail
+                    if (!activeNoteFlags[note]) continue;
+                    const auto state = envelopes[note].getState();
                     if (state != Envelope::Tail && state != Envelope::Idle)
                     {
                         shouldGenerateGrains = true;
@@ -213,116 +237,101 @@ public:
                 // Generate grains for notes that are still active (not in tail/idle)
                 if (shouldGenerateGrains && samplesToNextGrain <= 0.0)
                 {
-                    // Start grains for each active note that's still in Attack/Decay/Sustain/Release
-                    for (int midiNote : activeNotes)
+                    for (int midiNote = 0; midiNote < 128; ++midiNote)
                     {
-                        auto envIt = noteEnvelopes.find(midiNote);
-                        if (envIt != noteEnvelopes.end())
+                        if (!activeNoteFlags[midiNote]) continue;
+                        const auto state = envelopes[midiNote].getState();
+                        if (state != Envelope::Tail && state != Envelope::Idle)
                         {
-                            auto state = envIt->second.getState();
-                            // Generate grains during Attack/Decay/Sustain/Release - stop at Tail
-                            if (state != Envelope::Tail && state != Envelope::Idle)
-                            {
-                                float notePitchOffset = static_cast<float>(midiNote - 60);
-                                float totalPitch = pitchSemitones + notePitchOffset;
+                            float notePitchOffset = static_cast<float>(midiNote - 60);
+                            float totalPitch = pitchSemitones + notePitchOffset;
 
-                                startNewGrain(actualPosition, sprayPercent, grainSizeMs,
-                                             totalPitch, pitchSpreadSemitones,
-                                             panPosition, panSpreadPercent, reversePercent,
-                                             timeStretch, grainShape, octaveSpread, octaveProbability, midiNote);
-                            }
+                            startNewGrain(actualPosition, sprayPercent, grainSizeMs,
+                                         totalPitch, pitchSpreadSemitones,
+                                         panPosition, panSpreadPercent, reversePercent,
+                                         grainShape, octaveSpread, octaveProbability,
+                                         thirdOctaveProb, midiNote, filterRandomization, detuneCents,
+                                         grainSizeRandomization);
                         }
                     }
-                    samplesToNextGrain += baseSamplesPerGrain;
+
+                    // Apply jitter: random timing offset (±jitterPercent of grain interval)
+                    float jitterAmount = 0.0f;
+                    if (jitterPercent > 0.0f)
+                    {
+                        float jitterRange = (jitterPercent / 100.0f) * static_cast<float>(baseSamplesPerGrain);
+                        jitterAmount = (sprayDistribution(randomEngine) * jitterRange);
+                    }
+
+                    samplesToNextGrain += baseSamplesPerGrain + jitterAmount;
                 }
 
                 if (shouldGenerateGrains)
                     samplesToNextGrain -= 1.0;
             }
 
-            // Mix all active grains with per-note envelopes
-            // Use fixed-size array to avoid heap allocations on audio thread
-            // Clear note outputs (MIDI notes are 0-127, -1 for no note)
-            for (int i = 0; i < 128; ++i)
-            {
-                perNoteOutputs[i].left = 0.0f;
-                perNoteOutputs[i].right = 0.0f;
-                perNoteOutputs[i].hasOutput = false;
-            }
+            // Advance per-note envelopes once per sample, and write the value to a
+            // sparse lookup table indexed by MIDI note. Only active notes touch the
+            // table — at typical 1–3-note polyphony this replaces 128 slot ops/sample
+            // with effectively 0.
+            for (int note = 0; note < 128; ++note)
+                if (activeNoteFlags[note])
+                    envValuesThisSample[note] = envelopes[note].getNextValue();
 
-            // Accumulate grain outputs per MIDI note
-            for (auto& voice : grainVoices)
-            {
-                if (voice.activeVoice())
-                {
-                    auto [left, right] = voice.getNextSample();
-                    int note = voice.getMidiNote();
-
-                    if (note >= 0 && note < 128)
-                    {
-                        perNoteOutputs[note].left += left;
-                        perNoteOutputs[note].right += right;
-                        perNoteOutputs[note].hasOutput = true;
-                    }
-                }
-            }
-
-            // Apply per-note envelopes and sum
+            // Single pass over the voice pool: each voice's output is scaled by its
+            // own note's envelope value (computed above) and summed into the master.
+            // Voices whose note is no longer active contribute nothing (env stays at 0).
             float leftSample = 0.0f;
             float rightSample = 0.0f;
 
-            for (int note = 0; note < 128; ++note)
+            for (auto& voice : grainVoices)
             {
-                if (perNoteOutputs[note].hasOutput)
+                if (!voice.activeVoice())
+                    continue;
+
+                auto [left, right] = voice.getNextSample();
+                const int note = voice.getMidiNote();
+
+                if (note >= 0 && note < 128 && envelopes[note].isActive())
                 {
-                    float left = perNoteOutputs[note].left;
-                    float right = perNoteOutputs[note].right;
-
-                    // Get envelope value for this note
-                    auto it = noteEnvelopes.find(note);
-                    if (it != noteEnvelopes.end())
-                    {
-                        float envValue = it->second.getNextValue();
-                        left *= envValue;
-                        right *= envValue;
-                    }
-
-                    leftSample += left;
-                    rightSample += right;
+                    const float env = envValuesThisSample[note];
+                    leftSample  += left  * env;
+                    rightSample += right * env;
                 }
             }
 
-            // Write to output buffer
-            if (outputBuffer.getNumChannels() >= 2)
+            // Write to output buffer using direct pointer access
+            if (numChannels >= 2)
             {
-                outputBuffer.addSample(0, sample, leftSample);
-                outputBuffer.addSample(1, sample, rightSample);
-            }
-            else if (outputBuffer.getNumChannels() == 1)
-            {
-                // Mono: average left and right
-                outputBuffer.addSample(0, sample, (leftSample + rightSample) * 0.5f);
-            }
-        }
-
-        // Clean up finished envelopes (envelope handles tail fade internally now)
-        for (auto it = noteEnvelopes.begin(); it != noteEnvelopes.end(); )
-        {
-            if (!it->second.isActive())
-            {
-                int noteToRemove = it->first;
-                it = noteEnvelopes.erase(it);
-
-                // Remove note from activeNotes now that envelope is completely done
-                activeNotes.erase(noteToRemove);
-
-                // Update current MIDI note if we still have active notes
-                if (!activeNotes.empty())
-                    currentMidiNote = *activeNotes.begin();
+                leftOutputPtr[sample]  += leftSample;
+                rightOutputPtr[sample] += rightSample;
             }
             else
             {
-                ++it;
+                // Mono: average left and right
+                leftOutputPtr[sample] += (leftSample + rightSample) * 0.5f;
+            }
+        }
+
+        // Clean up notes whose envelope has fully finished. One linear scan over
+        // the flag array — same complexity as a std::set walk, no node dealloc.
+        bool anyRemoved = false;
+        for (int note = 0; note < 128; ++note)
+        {
+            if (activeNoteFlags[note] && envelopes[note].getState() == Envelope::Idle)
+            {
+                activeNoteFlags[note] = false;
+                --activeNoteCount;
+                anyRemoved = true;
+            }
+        }
+
+        // If we removed something, refresh currentMidiNote to the lowest still-active note.
+        if (anyRemoved && activeNoteCount > 0)
+        {
+            for (int note = 0; note < 128; ++note)
+            {
+                if (activeNoteFlags[note]) { currentMidiNote = note; break; }
             }
         }
     }
@@ -333,8 +342,11 @@ private:
     void startNewGrain(float position01, float sprayPercent, float grainSizeMs,
                        float pitchSemitones, float pitchSpreadSemitones,
                        float panPosition, float panSpreadPercent, float reversePercent,
-                       float timeStretch, int grainShape,
-                       float octaveSpread, float octaveProbability, int midiNote = -1)
+                       int grainShape,
+                       float octaveSpread, float octaveProbability,
+                       float thirdOctaveProb = 0.0f, int midiNote = -1,
+                       float filterRandomization = 0.0f, float detuneCents = 0.0f,
+                       float grainSizeRandomization = 0.0f)
     {
         // Find an inactive voice
         GrainVoice* voice = findFreeVoice();
@@ -356,13 +368,47 @@ private:
             float octaveRoll = octaveDistribution(randomEngine);  // 0-100
             if (octaveRoll < octaveProbability)
             {
-                // Random octave shift: -octaveSpread to +octaveSpread octaves
-                float octaveShift = (octaveDistribution(randomEngine) / 100.0f * 2.0f - 1.0f) * octaveSpread;
-                // Round to nearest integer octave
-                int octaves = static_cast<int>(std::round(octaveShift));
+                int semitoneShift = 0;
+
+                // Octave shift logic
+                int octaves = 0;
+
+                // Special handling for 3rd octave (lower probability)
+                if (octaveSpread >= 3.0f && thirdOctaveProb > 0.0f)
+                {
+                    float thirdOctaveRoll = octaveDistribution(randomEngine);  // 0-100
+                    if (thirdOctaveRoll < thirdOctaveProb)
+                    {
+                        // Pick 3rd octave (±3)
+                        octaves = (octaveDistribution(randomEngine) < 50.0f) ? -3 : 3;
+                    }
+                    else
+                    {
+                        // Pick from ±1 or ±2 octaves
+                        float innerRoll = octaveDistribution(randomEngine) / 100.0f;  // 0-1
+                        int magnitude = (innerRoll < 0.5f) ? 1 : 2;
+                        octaves = (octaveDistribution(randomEngine) < 50.0f) ? -magnitude : magnitude;
+                    }
+                }
+                else
+                {
+                    // Standard behavior: random octave shift within range
+                    float octaveShift = (octaveDistribution(randomEngine) / 100.0f * 2.0f - 1.0f) * octaveSpread;
+                    octaves = static_cast<int>(std::round(octaveShift));
+                }
+
                 // Convert to semitones (1 octave = 12 semitones)
-                randomizedPitch += octaves * 12.0f;
+                semitoneShift = octaves * 12;
+
+                randomizedPitch += static_cast<float>(semitoneShift);
             }
+        }
+
+        // Apply micro-detuning (cents to semitones: divide by 100)
+        if (detuneCents > 0.0f)
+        {
+            float detuneAmount = detuneDistribution(randomEngine) * detuneCents / 100.0f;
+            randomizedPitch += detuneAmount;
         }
 
         // Apply pan randomization
@@ -373,9 +419,55 @@ private:
         // Determine if this grain should be reversed
         const bool shouldReverse = reverseDistribution(randomEngine) < reversePercent;
 
-        // Start the grain with all parameters including time stretch and shape
-        voice->start(*sourceBuffer, randomizedPosition, grainSizeMs, randomizedPitch,
-                     randomizedPan, shouldReverse, currentSampleRate, timeStretch, grainShape, midiNote);
+        // Calculate per-grain filter cutoff with randomization
+        // Use logarithmic distribution for more musical spread
+        // filterRandomization 0-100 controls how much variation
+        float filterCutoff = 20000.0f;  // Default: fully open
+        if (filterRandomization > 0.0f)
+        {
+            // Random value 0-1
+            float randomVal = filterDistribution(randomEngine);
+
+            // Perceptual range: 200Hz to 20kHz
+            // Use squared curve to approximate logarithmic distribution (avoids log/exp)
+            float minFreq = 200.0f;
+            float maxFreq = 20000.0f;
+
+            // Interpolate between no randomization and full randomization
+            float randomAmount = filterRandomization * 0.01f;
+            float effectiveMin = maxFreq - randomAmount * (maxFreq - minFreq);
+
+            // Squared curve approximates perceptual (log) distribution
+            // Low values cluster toward the minimum frequency
+            float curved = randomVal * randomVal;
+            filterCutoff = effectiveMin + curved * (maxFreq - effectiveMin);
+        }
+
+        // Apply grain size randomization (per-grain variation)
+        float randomizedGrainSize = grainSizeMs;
+        if (grainSizeRandomization > 0.0f)
+        {
+            // Random variation: ±grainSizeRandomization%
+            // Example: at 50% randomization, grain can be 50-150% of base size
+            float randomVal = sizeDistribution(randomEngine);  // -1 to +1
+            float variation = randomVal * (grainSizeRandomization / 100.0f);
+            randomizedGrainSize = grainSizeMs * (1.0f + variation);
+            // Clamp to valid range
+            randomizedGrainSize = juce::jlimit(5.0f, 2000.0f, randomizedGrainSize);
+        }
+
+        // Calculate stereo spread (Haas effect for spatial width)
+        // Use pan spread as base, apply random offset per grain
+        // Typical Haas delays: 5-30ms for width without losing center
+        float stereoSpreadMs = (panSpreadPercent / 100.0f) * 15.0f;  // Max 15ms spread
+        float randomSpreadOffset = panDistribution(randomEngine);     // -1 to +1
+        float finalSpreadMs = stereoSpreadMs * randomSpreadOffset;
+        float stereoSpreadSamples = (finalSpreadMs / 1000.0f) * static_cast<float>(currentSampleRate);
+
+        // Start the grain with all parameters
+        voice->start(*sourceBuffer, randomizedPosition, randomizedGrainSize, randomizedPitch,
+                     randomizedPan, shouldReverse, currentSampleRate, grainShape, midiNote, filterCutoff,
+                     stereoSpreadSamples);
     }
 
     /** Find an inactive grain voice, or steal the oldest one (optimized) */
@@ -398,21 +490,10 @@ private:
     }
 
     //==============================================================================
-    // Per-note output buffer struct (avoids heap allocations)
-    struct NoteOutput
-    {
-        float left = 0.0f;
-        float right = 0.0f;
-        bool hasOutput = false;
-    };
-
     // State
     std::vector<GrainVoice> grainVoices;
     const juce::AudioBuffer<float>* sourceBuffer = nullptr;
     std::mt19937 randomEngine;
-
-    // Fixed-size per-note output buffer (128 MIDI notes)
-    std::array<NoteOutput, 128> perNoteOutputs;
 
     // Pre-allocated random distributions (avoid construction overhead)
     std::uniform_real_distribution<float> sprayDistribution;
@@ -420,6 +501,9 @@ private:
     std::uniform_real_distribution<float> panDistribution;
     std::uniform_real_distribution<float> reverseDistribution;
     std::uniform_real_distribution<float> octaveDistribution;
+    std::uniform_real_distribution<float> filterDistribution;
+    std::uniform_real_distribution<float> detuneDistribution;
+    std::uniform_real_distribution<float> sizeDistribution;
 
     double currentSampleRate = 44100.0;
     double samplesToNextGrain = 0.0;
@@ -431,12 +515,19 @@ private:
     bool wasFrozen = false;
     float frozenPosition = 0.5f;
 
-    // MIDI note tracking
-    std::set<int> activeNotes;
+    // MIDI note tracking. Flag-array + count replaces std::set<int> so that
+    // noteOn (called from the MIDI loop in processBlock) doesn't allocate a
+    // tree node on the audio thread. Iteration order matches the old set
+    // (ascending MIDI note) because we always scan 0..127.
+    std::array<bool, 128> activeNoteFlags {};
+    int activeNoteCount = 0;
     int currentMidiNote = 60;  // Middle C as default
 
-    // Per-note envelope system
-    std::map<int, Envelope> noteEnvelopes;  // MIDI note -> envelope
+    // Per-note envelope system. std::array indexed by MIDI note (0..127) — fixed
+    // storage, no allocations on note-on. envValuesThisSample is a sparse lookup
+    // populated each sample for active notes only.
+    std::array<Envelope, 128> envelopes;
+    std::array<float, 128> envValuesThisSample {};
     float envelopeAttack = 10.0f;
     float envelopeDecay = 300.0f;
     float envelopeSustain = 0.8f;  // 0-1 range

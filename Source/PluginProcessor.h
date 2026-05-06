@@ -87,6 +87,60 @@ private:
     // Parameter management
     juce::AudioProcessorValueTreeState apvts;
 
+    // Cached APVTS parameter pointers — populated once in the constructor so the
+    // audio thread doesn't string-lookup ~30 parameters per block.
+    struct ParamPtrs
+    {
+        std::atomic<float>* position = nullptr;
+        std::atomic<float>* spray = nullptr;
+        std::atomic<float>* grainSize = nullptr;
+        std::atomic<float>* density = nullptr;
+        std::atomic<float>* pitch = nullptr;
+        std::atomic<float>* pan = nullptr;
+        std::atomic<float>* gain = nullptr;
+
+        std::atomic<float>* panSpread = nullptr;
+        std::atomic<float>* freeze = nullptr;
+        std::atomic<float>* reverseProbability = nullptr;
+
+        std::atomic<float>* timeStretch = nullptr;
+        std::atomic<float>* grainShape = nullptr;
+        std::atomic<float>* pitchTimeLock = nullptr;
+
+        std::atomic<float>* envAttack = nullptr;
+        std::atomic<float>* envDecay = nullptr;
+        std::atomic<float>* envSustain = nullptr;
+        std::atomic<float>* envRelease = nullptr;
+
+        std::atomic<float>* lpFilterEnabled = nullptr;
+        std::atomic<float>* lpFilterCutoff = nullptr;
+        std::atomic<float>* lpFilterResonance = nullptr;
+
+        std::atomic<float>* hpFilterEnabled = nullptr;
+        std::atomic<float>* hpFilterCutoff = nullptr;
+        std::atomic<float>* hpFilterResonance = nullptr;
+
+        std::atomic<float>* octaveSpread = nullptr;
+        std::atomic<float>* octaveProbability = nullptr;
+        std::atomic<float>* thirdOctaveProb = nullptr;
+
+        std::atomic<float>* filterRandomization = nullptr;
+        std::atomic<float>* detuneCents = nullptr;
+        std::atomic<float>* jitterPercent = nullptr;
+        std::atomic<float>* grainSizeRandomization = nullptr;
+
+        // LFO 1..4
+        std::array<std::atomic<float>*, 4> lfoRate     {};
+        std::array<std::atomic<float>*, 4> lfoDepth    {};
+        std::array<std::atomic<float>*, 4> lfoWaveform {};
+        std::array<std::atomic<float>*, 4> lfoTarget   {};
+        std::array<std::atomic<float>*, 4> lfoTempoSync{};
+        std::array<std::atomic<float>*, 4> lfoPhase    {};
+        std::array<std::atomic<float>*, 4> lfoEnabled  {};
+    } params;
+
+    void cacheParameterPointers();
+
     // Granular synthesis engine
     GrainEngine grainEngine;
 

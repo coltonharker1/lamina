@@ -1,4 +1,4 @@
-# Somnia Grains VST - Phase 3 Development Plan
+# Lamina Grains VST - Phase 3 Development Plan
 
 ## Overview
 Phase 3 focuses on independent time/pitch manipulation and advanced modulation capabilities to create more expressive and unique granular textures.
@@ -94,7 +94,7 @@ Phase 3 focuses on independent time/pitch manipulation and advanced modulation c
 
 ```
 ┌─────────────────────────────────────────────────────────────┐
-│  SOMNIA                        [Sample: filename.wav] [Load] │
+│  LAMINA                        [Sample: filename.wav] [Load] │
 ├─────────────────────────────────────────────────────────────┤
 │                                                               │
 │  ┌────────────────────────────────────────────────────────┐ │
@@ -146,7 +146,7 @@ Phase 3 focuses on independent time/pitch manipulation and advanced modulation c
 
 ---
 
-### Color System (Somnia Theme)
+### Color System (Lamina Theme)
 
 #### Current Palette
 - Midnight Blue: `#1a2332` (background)

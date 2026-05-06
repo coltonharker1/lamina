@@ -2,6 +2,7 @@
 
 #include <juce_gui_basics/juce_gui_basics.h>
 #include <juce_audio_processors/juce_audio_processors.h>
+#include <cmath>
 
 /**
  * InteractiveADSREnvelope - Draggable ADSR curve visualization
@@ -11,7 +12,6 @@
  * - Attack/Decay adjust time horizontally
  * - Sustain adjusts level vertically
  * - Release adjusts time horizontally
- * - Display values below the curve
  */
 class InteractiveADSREnvelope : public juce::Component
 {
@@ -31,14 +31,22 @@ public:
     void paint(juce::Graphics& g) override
     {
         auto bounds = getLocalBounds();
+        constexpr juce::uint32 paper = 0xfff4f1ea;
+        constexpr juce::uint32 ink = 0xff050505;
+        constexpr juce::uint32 quietInk = 0xaa000000;
+        constexpr juce::uint32 faintInk = 0x18000000;
 
-        // Background
-        g.setColour(juce::Colour(0xff0a0f1a));  // Dark slate background
-        g.fillRoundedRectangle(bounds.toFloat(), 8.0f);
+        g.fillAll(juce::Colour(paper));
 
-        // Border
-        g.setColour(juce::Colour(0xff1e293b));
-        g.drawRoundedRectangle(bounds.toFloat(), 8.0f, 1.0f);
+        g.setColour(juce::Colour(ink));
+        g.drawRect(bounds, 1);
+
+        auto title = bounds.removeFromTop(24);
+        g.drawLine(static_cast<float>(title.getX()), static_cast<float>(title.getBottom()) - 0.5f,
+                   static_cast<float>(title.getRight()), static_cast<float>(title.getBottom()) - 0.5f, 1.0f);
+        g.setFont(juce::Font(juce::FontOptions(7.5f)));
+        g.drawText("ENVELOPE CONTOUR", title.reduced(10, 0), juce::Justification::centredLeft);
+        g.drawText("A / D / S / R", title.reduced(10, 0), juce::Justification::centredRight);
 
         // Get current ADSR values (parameters are in milliseconds and 0-100 for sustain)
         float attackMs = attackParam ? attackParam->get() : 10.0f;
@@ -48,13 +56,13 @@ public:
         float releaseMs = releaseParam ? releaseParam->get() : 500.0f;
 
         // Calculate graph dimensions (scale to component size)
-        const float padding = 12.0f;
-        const float valueLabelHeight = 35.0f;  // Space for value labels at bottom
+        const float padding = 14.0f;
+        const float phaseLabelHeight = 18.0f;
         const float graphWidth = bounds.getWidth() - (padding * 2);
-        const float graphHeight = bounds.getHeight() - valueLabelHeight - (padding * 2);
-        const float graphTop = padding;
+        const float graphHeight = bounds.getHeight() - phaseLabelHeight - (padding * 2);
+        const float graphTop = static_cast<float>(bounds.getY()) + padding;
         const float graphBottom = graphTop + graphHeight;
-        const float graphLeft = padding;
+        const float graphLeft = static_cast<float>(bounds.getX()) + padding;
         const float graphRight = graphLeft + graphWidth;
 
         // Use fixed-width zones for each ADSR phase - this prevents handles from moving each other
@@ -69,27 +77,23 @@ public:
         float sustainZoneStart = decayZoneEnd;
         float sustainZoneEnd = sustainZoneStart + zoneWidth;
         float releaseZoneStart = sustainZoneEnd;
-        float releaseZoneEnd = graphRight;
 
         // Calculate control point X positions based on parameter values within each zone
-        // Attack: maps 1-5000ms to position within attack zone
-        float attackNormalized = (attackMs - 1.0f) / (5000.0f - 1.0f);  // 0 to 1
+        float attackNormalized = timeToVisual(attackMs, 1.0f, 5000.0f);
         float attackX = attackZoneStart + attackNormalized * zoneWidth;
 
-        // Decay: maps 10-5000ms to position within decay zone
-        float decayNormalized = (decayMs - 10.0f) / (5000.0f - 10.0f);  // 0 to 1
+        float decayNormalized = timeToVisual(decayMs, 10.0f, 5000.0f);
         float decayX = decayZoneStart + decayNormalized * zoneWidth;
 
         // Sustain: fixed in middle of sustain zone (horizontal position doesn't change)
         float sustainPointX = sustainZoneStart + zoneWidth * 0.5f;
 
-        // Release: maps 10-5000ms to position within release zone
-        float releaseNormalized = (releaseMs - 10.0f) / (5000.0f - 10.0f);  // 0 to 1
+        float releaseNormalized = timeToVisual(releaseMs, 10.0f, 5000.0f);
         float releaseX = releaseZoneStart + releaseNormalized * zoneWidth;
 
         // Y positions based on levels
         float sustainY = graphTop + graphHeight * (1.0f - sustain);
-        float peakY = graphTop;
+        float peakY = graphTop + 2.0f;
         float startY = graphBottom;
         float endY = graphBottom;
 
@@ -99,23 +103,20 @@ public:
         sustainPoint = {sustainPointX, sustainY};
         releasePoint = {releaseX, endY};
 
-        // Draw grid lines
-        g.setColour(juce::Colour(0xff334155));
-        g.drawLine(graphLeft, graphTop, graphLeft, graphBottom, 1.0f);
-        g.drawLine(graphLeft, graphBottom, graphRight, graphBottom, 1.0f);
-
-        // Horizontal grid lines (dashed)
-        g.setColour(juce::Colour(0xff1e293b));
-        for (float ratio : {0.25f, 0.5f, 0.75f})
+        g.setColour(juce::Colour(faintInk));
+        for (int i = 1; i < 4; ++i)
         {
-            float y = graphTop + graphHeight * ratio;
-            float dashLength = 2.0f;
-            float gapLength = 2.0f;
-            for (float x = graphLeft; x < graphRight; x += dashLength + gapLength)
-            {
-                g.drawLine(x, y, juce::jmin(x + dashLength, graphRight), y, 1.0f);
-            }
+            const float x = graphLeft + zoneWidth * static_cast<float>(i);
+            g.drawLine(x, graphTop, x, graphBottom, 0.65f);
         }
+        for (float ratio : { 0.25f, 0.5f, 0.75f })
+        {
+            const float y = graphTop + graphHeight * ratio;
+            for (float x = graphLeft; x < graphRight; x += 6.0f)
+                g.drawLine(x, y, juce::jmin(x + 2.0f, graphRight), y, 0.55f);
+        }
+        g.setColour(juce::Colour(ink).withAlpha(0.62f));
+        g.drawLine(graphLeft, graphBottom, graphRight, graphBottom, 1.0f);
 
         // Draw ADSR curve path
         juce::Path curvePath;
@@ -125,43 +126,30 @@ public:
         curvePath.lineTo(sustainPoint.x, sustainPoint.y);
         curvePath.lineTo(releasePoint.x, releasePoint.y);
 
-        // Fill with gradient
         juce::Path fillPath = curvePath;
         fillPath.lineTo(releasePoint.x, startY);
         fillPath.lineTo(graphLeft, startY);
         fillPath.closeSubPath();
 
-        juce::ColourGradient gradient(
-            juce::Colour(0x66f472b6), bounds.getCentreX(), graphTop,
-            juce::Colour(0x1af472b6), bounds.getCentreX(), graphBottom,
-            false
-        );
-        g.setGradientFill(gradient);
+        g.setColour(juce::Colour(ink).withAlpha(0.045f));
         g.fillPath(fillPath);
 
-        // Draw curve line with glow
-        g.setColour(juce::Colour(0xfff472b6));  // Pink #f472b6
-        g.strokePath(curvePath, juce::PathStrokeType(2.5f, juce::PathStrokeType::curved, juce::PathStrokeType::rounded));
+        g.setColour(juce::Colour(ink));
+        g.strokePath(curvePath, juce::PathStrokeType(1.9f, juce::PathStrokeType::curved, juce::PathStrokeType::rounded));
+
+        g.setColour(juce::Colour(ink).withAlpha(0.24f));
+        g.strokePath(curvePath, juce::PathStrokeType(4.8f, juce::PathStrokeType::curved, juce::PathStrokeType::rounded));
 
         // Draw control points
         auto drawControlPoint = [&](juce::Point<float> point, bool isHover, bool isDragging)
         {
-            float radius = isDragging ? 7.0f : (isHover ? 6.0f : 5.0f);
-
-            // Glow effect for active/hover
-            if (isDragging || isHover)
-            {
-                g.setColour(juce::Colour(0x80f472b6));
-                g.fillEllipse(point.x - radius - 3, point.y - radius - 3, (radius + 3) * 2, (radius + 3) * 2);
-            }
-
-            // Main circle
-            g.setColour(juce::Colour(0xfff472b6));
-            g.fillEllipse(point.x - radius, point.y - radius, radius * 2, radius * 2);
-
-            // White border
-            g.setColour(juce::Colours::white);
-            g.drawEllipse(point.x - radius, point.y - radius, radius * 2, radius * 2, isDragging ? 2.5f : 2.0f);
+            float radius = isDragging ? 6.4f : (isHover ? 5.8f : 5.0f);
+            g.setColour(juce::Colour(paper));
+            g.fillEllipse(point.x - radius, point.y - radius, radius * 2.0f, radius * 2.0f);
+            g.setColour(juce::Colour(ink));
+            g.drawEllipse(point.x - radius, point.y - radius, radius * 2.0f, radius * 2.0f, isDragging ? 1.8f : 1.2f);
+            g.drawLine(point.x - radius * 0.55f, point.y, point.x + radius * 0.55f, point.y, 0.8f);
+            g.drawLine(point.x, point.y - radius * 0.55f, point.x, point.y + radius * 0.55f, 0.8f);
         };
 
         drawControlPoint(attackPoint, hoverPoint == 0, dragPoint == 0);
@@ -169,30 +157,13 @@ public:
         drawControlPoint(sustainPoint, hoverPoint == 2, dragPoint == 2);
         drawControlPoint(releasePoint, hoverPoint == 3, dragPoint == 3);
 
-        // Draw phase labels (use zone boundaries, not point positions)
-        g.setColour(juce::Colour(0xff64748b));
-        g.setFont(juce::Font(juce::FontOptions(11.0f)));
+        g.setColour(juce::Colour(quietInk));
+        g.setFont(juce::Font(juce::FontOptions(8.0f)));
 
-        g.drawText("A", juce::Rectangle<float>(attackZoneStart, graphBottom + 5, zoneWidth, 15), juce::Justification::centred);
-        g.drawText("D", juce::Rectangle<float>(decayZoneStart, graphBottom + 5, zoneWidth, 15), juce::Justification::centred);
-        g.drawText("S", juce::Rectangle<float>(sustainZoneStart, graphBottom + 5, zoneWidth, 15), juce::Justification::centred);
-        g.drawText("R", juce::Rectangle<float>(releaseZoneStart, graphBottom + 5, zoneWidth, 15), juce::Justification::centred);
-
-        // Draw value labels at bottom
-        float labelY = graphBottom + 35;
-        g.setColour(juce::Colour(0xff64748b));
-        g.setFont(juce::Font(juce::FontOptions(10.0f)));
-        g.drawText("Attack", juce::Rectangle<float>(graphLeft, labelY, graphWidth / 4, 12), juce::Justification::centred);
-        g.drawText("Decay", juce::Rectangle<float>(graphLeft + graphWidth / 4, labelY, graphWidth / 4, 12), juce::Justification::centred);
-        g.drawText("Sustain", juce::Rectangle<float>(graphLeft + graphWidth / 2, labelY, graphWidth / 4, 12), juce::Justification::centred);
-        g.drawText("Release", juce::Rectangle<float>(graphLeft + 3 * graphWidth / 4, labelY, graphWidth / 4, 12), juce::Justification::centred);
-
-        g.setColour(juce::Colour(0xffd1d5db));
-        g.setFont(juce::Font(juce::FontOptions(9.0f)));
-        g.drawText(juce::String(attackMs, 0) + "ms", juce::Rectangle<float>(graphLeft, labelY + 12, graphWidth / 4, 12), juce::Justification::centred);
-        g.drawText(juce::String(decayMs, 0) + "ms", juce::Rectangle<float>(graphLeft + graphWidth / 4, labelY + 12, graphWidth / 4, 12), juce::Justification::centred);
-        g.drawText(juce::String(sustainPercent, 0) + "%", juce::Rectangle<float>(graphLeft + graphWidth / 2, labelY + 12, graphWidth / 4, 12), juce::Justification::centred);
-        g.drawText(juce::String(releaseMs, 0) + "ms", juce::Rectangle<float>(graphLeft + 3 * graphWidth / 4, labelY + 12, graphWidth / 4, 12), juce::Justification::centred);
+        g.drawText("A", juce::Rectangle<float>(attackZoneStart, graphBottom + 3, zoneWidth, 14), juce::Justification::centred);
+        g.drawText("D", juce::Rectangle<float>(decayZoneStart, graphBottom + 3, zoneWidth, 14), juce::Justification::centred);
+        g.drawText("S", juce::Rectangle<float>(sustainZoneStart, graphBottom + 3, zoneWidth, 14), juce::Justification::centred);
+        g.drawText("R", juce::Rectangle<float>(releaseZoneStart, graphBottom + 3, zoneWidth, 14), juce::Justification::centred);
     }
 
     void mouseMove(const juce::MouseEvent& event) override
@@ -223,12 +194,15 @@ public:
             return;
 
         auto pos = event.position;
-        const float padding = 12.0f;
-        const float valueLabelHeight = 35.0f;  // Must match paint() value
-        const float graphWidth = getWidth() - (padding * 2);
-        const float graphHeight = getHeight() - valueLabelHeight - (padding * 2);
-        const float graphTop = padding;
-        const float graphLeft = padding;
+        auto bounds = getLocalBounds();
+        bounds.removeFromTop(24);
+
+        const float padding = 14.0f;
+        const float phaseLabelHeight = 18.0f;
+        const float graphWidth = bounds.getWidth() - (padding * 2);
+        const float graphHeight = bounds.getHeight() - phaseLabelHeight - (padding * 2);
+        const float graphTop = static_cast<float>(bounds.getY()) + padding;
+        const float graphLeft = static_cast<float>(bounds.getX()) + padding;
 
         // Fixed zones - each phase gets 25% of width
         const float zoneWidth = graphWidth / 4.0f;
@@ -241,16 +215,14 @@ public:
         {
             // Constrain to attack zone
             float normalizedX = juce::jlimit(0.0f, 1.0f, (pos.x - attackZoneStart) / zoneWidth);
-            // Map normalized position to attack parameter range (1-5000ms)
-            float newAttackMs = 1.0f + normalizedX * (5000.0f - 1.0f);
+            float newAttackMs = visualToTime(normalizedX, 1.0f, 5000.0f);
             attackParam->setValueNotifyingHost(attackParam->convertTo0to1(newAttackMs));
         }
         else if (dragPoint == 1)  // Decay handle - controls decay time AND sustain level
         {
             // Horizontal: decay time within decay zone
             float normalizedX = juce::jlimit(0.0f, 1.0f, (pos.x - decayZoneStart) / zoneWidth);
-            // Map to decay parameter range (10-5000ms)
-            float newDecayMs = 10.0f + normalizedX * (5000.0f - 10.0f);
+            float newDecayMs = visualToTime(normalizedX, 10.0f, 5000.0f);
             decayParam->setValueNotifyingHost(decayParam->convertTo0to1(newDecayMs));
 
             // Vertical: sustain level
@@ -270,8 +242,7 @@ public:
         {
             // Horizontal: release time within release zone
             float normalizedX = juce::jlimit(0.0f, 1.0f, (pos.x - releaseZoneStart) / zoneWidth);
-            // Map to release parameter range (10-5000ms)
-            float newReleaseMs = 10.0f + normalizedX * (5000.0f - 10.0f);
+            float newReleaseMs = visualToTime(normalizedX, 10.0f, 5000.0f);
             releaseParam->setValueNotifyingHost(releaseParam->convertTo0to1(newReleaseMs));
         }
 
@@ -285,6 +256,18 @@ public:
     }
 
 private:
+    static float timeToVisual(float value, float minValue, float maxValue)
+    {
+        value = juce::jlimit(minValue, maxValue, value);
+        return std::log(value / minValue) / std::log(maxValue / minValue);
+    }
+
+    static float visualToTime(float normalised, float minValue, float maxValue)
+    {
+        normalised = juce::jlimit(0.0f, 1.0f, normalised);
+        return minValue * std::pow(maxValue / minValue, normalised);
+    }
+
     int getPointAtPosition(juce::Point<float> pos)
     {
         const float hitRadius = 12.0f;  // Larger hitbox for easier clicking

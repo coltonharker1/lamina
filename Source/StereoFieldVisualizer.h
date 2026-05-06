@@ -27,7 +27,7 @@ public:
     {
         auto bounds = getLocalBounds();
 
-        // Somnia sleepy theme - darker background
+        // Lamina sleepy theme - darker background
         g.fillAll(juce::Colour(0xff0f1620));
 
         // Subtle border

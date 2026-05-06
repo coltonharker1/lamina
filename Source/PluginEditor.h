@@ -28,6 +28,30 @@ public:
 
 private:
     //==============================================================================
+    class MonoPrintLookAndFeel : public juce::LookAndFeel_V4
+    {
+    public:
+        void drawRotarySlider(juce::Graphics& g, int x, int y, int width, int height,
+                              float sliderPosProportional, float rotaryStartAngle,
+                              float rotaryEndAngle, juce::Slider& slider) override;
+        void drawButtonBackground(juce::Graphics& g, juce::Button& button,
+                                  const juce::Colour& backgroundColour,
+                                  bool shouldDrawButtonAsHighlighted,
+                                  bool shouldDrawButtonAsDown) override;
+        void drawButtonText(juce::Graphics& g, juce::TextButton& button,
+                            bool shouldDrawButtonAsHighlighted,
+                            bool shouldDrawButtonAsDown) override;
+        void drawScrollbar(juce::Graphics& g, juce::ScrollBar& scrollbar,
+                           int x, int y, int width, int height, bool isScrollbarVertical,
+                           int thumbStartPosition, int thumbSize, bool isMouseOver,
+                           bool isMouseDown) override;
+        juce::Font getTabButtonFont(juce::TabBarButton& button, float height) override;
+        void drawTabButton(juce::TabBarButton& button, juce::Graphics& g,
+                           bool isMouseOver, bool isMouseDown) override;
+        void drawTabButtonText(juce::TabBarButton& button, juce::Graphics& g,
+                               bool isMouseOver, bool isMouseDown) override;
+    };
+
     // Slider listener
     void sliderValueChanged (juce::Slider* slider) override;
     void sliderDragStarted (juce::Slider* slider) override;
@@ -50,6 +74,10 @@ private:
 
     //==============================================================================
     GrainsAudioProcessor& audioProcessor;
+    MonoPrintLookAndFeel monoPrintLookAndFeel;
+    juce::Typeface::Ptr instrumentSerifRegular;
+    juce::Typeface::Ptr instrumentSerifItalic;
+    juce::Typeface::Ptr jetBrainsMono;
 
     // UI Components
     juce::TextButton loadSampleButton;
@@ -168,8 +196,26 @@ private:
         juce::Label octaveSpreadLabel;
         juce::Slider octaveProbabilitySlider;
         juce::Label octaveProbabilityLabel;
+        juce::Slider thirdOctaveProbSlider;
+        juce::Label thirdOctaveProbLabel;
         juce::ComboBox grainShapeCombo;
         juce::Label grainShapeLabel;
+
+        // Sound Quality / Randomization controls (ported from grains-vst)
+        juce::Slider filterRandomizationSlider;
+        juce::Label filterRandomizationLabel;
+        juce::Slider detuneSlider;
+        juce::Label detuneLabel;
+        juce::Slider jitterSlider;
+        juce::Label jitterLabel;
+        juce::Slider sizeRandomizationSlider;
+        juce::Label sizeRandomizationLabel;
+
+        // Section headers for Sound Design tab
+        juce::Label playbackSectionLabel;
+        juce::Label octavesSectionLabel;
+        juce::Label soundQualitySectionLabel;
+
 
         // Close button
         juce::TextButton closeButton;
@@ -195,10 +241,41 @@ private:
         public:
             SoundDesignTab(AdvancedPanel& parent);
             void resized() override;
+
+            // Store divider positions for painting
+            int divider1Y = 0;
+            int divider2Y = 0;
+
         private:
             AdvancedPanel& panel;
             juce::Viewport viewport;
-            juce::Component contentComponent;
+
+            // Custom content component that draws section dividers
+            class ContentWithDividers : public juce::Component
+            {
+            public:
+                ContentWithDividers(SoundDesignTab& tab) : parentTab(tab) {}
+                void paint(juce::Graphics& g) override
+                {
+                    // Draw horizontal divider lines
+                    g.setColour(juce::Colour(0xff050505).withAlpha(0.22f));
+
+                    if (parentTab.divider1Y > 0)
+                    {
+                        g.drawLine(20.0f, static_cast<float>(parentTab.divider1Y),
+                                   static_cast<float>(getWidth() - 20), static_cast<float>(parentTab.divider1Y), 1.0f);
+                    }
+                    if (parentTab.divider2Y > 0)
+                    {
+                        g.drawLine(20.0f, static_cast<float>(parentTab.divider2Y),
+                                   static_cast<float>(getWidth() - 20), static_cast<float>(parentTab.divider2Y), 1.0f);
+                    }
+                }
+            private:
+                SoundDesignTab& parentTab;
+            };
+
+            ContentWithDividers contentComponent { *this };
             bool isResizing = false;
         };
 
@@ -234,6 +311,13 @@ private:
     std::unique_ptr<SliderAttachment> reverseProbabilityAttachment;  // In advanced panel Sound Design tab
     std::unique_ptr<SliderAttachment> octaveSpreadAttachment;  // In advanced panel Sound Design tab
     std::unique_ptr<SliderAttachment> octaveProbabilityAttachment;  // In advanced panel Sound Design tab
+    std::unique_ptr<SliderAttachment> thirdOctaveProbAttachment;  // In advanced panel Sound Design tab
+
+    // Sound quality / randomization attachments (ported from grains-vst)
+    std::unique_ptr<SliderAttachment> filterRandomizationAttachment;
+    std::unique_ptr<SliderAttachment> detuneAttachment;
+    std::unique_ptr<SliderAttachment> jitterAttachment;
+    std::unique_ptr<SliderAttachment> sizeRandomizationAttachment;
 
     // Filter attachments
     std::unique_ptr<ButtonAttachment> lpFilterToggleAttachment;

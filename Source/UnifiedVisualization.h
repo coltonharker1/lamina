@@ -58,22 +58,37 @@ public:
     {
         auto bounds = getLocalBounds();
 
-        // Somnia sleepy theme - darker background
-        g.fillAll(juce::Colour(0xff0f1620));
+        constexpr juce::uint32 paper = 0xfff4f1ea;
+        constexpr juce::uint32 ink = 0xff050505;
+        constexpr juce::uint32 quietInk = 0xaa000000;
+        constexpr juce::uint32 faintInk = 0x14000000;
 
-        // Subtle border
-        g.setColour(juce::Colour(0xff4a4a52).withAlpha(0.3f));
+        g.fillAll(juce::Colour(paper));
+        g.setColour(juce::Colour(ink));
         g.drawRect(bounds, 1);
+
+        auto header = bounds.removeFromTop(30);
+        g.drawLine(static_cast<float>(header.getX()), static_cast<float>(header.getBottom()) - 0.5f,
+                   static_cast<float>(header.getRight()), static_cast<float>(header.getBottom()) - 0.5f, 1.0f);
+        g.setFont(juce::Font(juce::FontOptions(8.0f)));
+        g.drawText("FIG. I - SOUND SPECIMEN", header.reduced(12, 0), juce::Justification::centredLeft);
+
+        for (int x = bounds.getX(); x < bounds.getRight(); x += 64)
+        {
+            g.setColour(juce::Colour(faintInk));
+            g.drawLine(static_cast<float>(x), static_cast<float>(bounds.getY()),
+                       static_cast<float>(x), static_cast<float>(bounds.getBottom()), 0.7f);
+        }
 
         if (audioBuffer == nullptr || audioBuffer->getNumSamples() == 0)
         {
-            g.setColour(juce::Colour(0xff9ba4d8).withAlpha(0.5f));
-            g.setFont(14.0f);
-            g.drawText("No sample loaded", bounds, juce::Justification::centred);
+            g.setColour(juce::Colour(quietInk));
+            g.setFont(juce::Font(juce::FontOptions(20.0f)));
+            g.drawText("No specimen loaded", bounds, juce::Justification::centred);
             return;
         }
 
-        auto visualBounds = bounds.reduced(10);
+        auto visualBounds = bounds.reduced(14, 12);
 
         // Draw waveform first (background)
         drawWaveform(g, visualBounds);
@@ -175,20 +190,23 @@ private:
 
         waveformPath.closeSubPath();
 
-        // Fill waveform with subtle lavender
-        g.setColour(juce::Colour(0xffb4a5d8).withAlpha(0.15f));
+        g.setColour(juce::Colour(0xff050505).withAlpha(0.16f));
         g.fillPath(waveformPath);
 
-        // Draw outline with dusty rose
-        g.setColour(juce::Colour(0xffd4a5a5).withAlpha(0.6f));
-        g.strokePath(waveformPath, juce::PathStrokeType(1.0f));
+        g.setColour(juce::Colour(0xff050505).withAlpha(0.72f));
+        g.strokePath(waveformPath, juce::PathStrokeType(0.9f));
 
-        // Draw center line
-        g.setColour(juce::Colour(0xff4a4a52).withAlpha(0.3f));
+        g.setColour(juce::Colour(0xff050505).withAlpha(0.20f));
         g.drawLine(static_cast<float>(bounds.getX()),
                   bounds.getCentreY(),
                   static_cast<float>(bounds.getRight()),
                   bounds.getCentreY(), 1.0f);
+
+        g.setColour(juce::Colour(0xff050505));
+        g.setFont(juce::Font(juce::FontOptions(7.0f)));
+        g.drawText("0.0 S", bounds.withHeight(14).withY(bounds.getBottom() - 14), juce::Justification::centredLeft);
+        g.drawText(juce::String(static_cast<double>(numSamples) / 48000.0, 1) + " S",
+                   bounds.withHeight(14).withY(bounds.getBottom() - 14), juce::Justification::centredRight);
     }
 
     void drawWindowOverlay(juce::Graphics& g, juce::Rectangle<int> bounds)
@@ -206,27 +224,29 @@ private:
         int startX = bounds.getX() + static_cast<int>(windowStart * bounds.getWidth());
         int endX = bounds.getX() + static_cast<int>(windowEnd * bounds.getWidth());
 
-        // Draw window area with subtle lavender glow
-        g.setColour(juce::Colour(0xffb4a5d8).withAlpha(0.15f));
-        g.fillRect(startX, bounds.getY(), endX - startX, bounds.getHeight());
+        juce::Rectangle<int> sprayWindow(startX, bounds.getY() + 6,
+                                         juce::jmax(1, endX - startX), bounds.getHeight() - 12);
+        g.setColour(juce::Colour(0xff050505).withAlpha(0.045f));
+        g.fillRect(sprayWindow);
 
-        // Draw window boundaries
-        g.setColour(juce::Colour(0xffb4a5d8).withAlpha(0.5f));
+        g.setColour(juce::Colour(0xff050505).withAlpha(0.55f));
         g.drawLine(static_cast<float>(startX), static_cast<float>(bounds.getY()),
                   static_cast<float>(startX), static_cast<float>(bounds.getBottom()), 1.5f);
         g.drawLine(static_cast<float>(endX), static_cast<float>(bounds.getY()),
                   static_cast<float>(endX), static_cast<float>(bounds.getBottom()), 1.5f);
 
-        // Draw position marker (center)
         int posX = bounds.getX() + static_cast<int>(position * bounds.getWidth());
-        g.setColour(juce::Colour(0xffb4a5d8).withAlpha(0.9f));
+        g.setColour(juce::Colour(0xff050505));
         g.drawLine(static_cast<float>(posX), static_cast<float>(bounds.getY()),
                   static_cast<float>(posX), static_cast<float>(bounds.getBottom()), 2.0f);
+        g.setFont(juce::Font(juce::FontOptions(7.0f)));
+        g.drawText("POS " + juce::String(position * 100.0f, 0) + "%",
+                   juce::Rectangle<int>(posX + 4, bounds.getY() + 4, 80, 12),
+                   juce::Justification::centredLeft);
 
-        // If frozen, draw a special indicator
         if (isFrozen)
         {
-            g.setColour(juce::Colour(0xffd4a5a5).withAlpha(0.7f));  // Dusty rose for frozen
+            g.setColour(juce::Colour(0xff050505).withAlpha(0.72f));
             g.setFont(11.0f);
             g.drawText("FROZEN", bounds.removeFromTop(20).removeFromRight(60), juce::Justification::centredRight);
         }
@@ -259,26 +279,51 @@ private:
                 float normalizedSize = juce::jlimit(0.2f, 1.0f, grainSize / 10000.0f);  // Normalize
                 int radius = static_cast<int>(4.0f + envelopeSize * normalizedSize * 12.0f);
 
-                // Color gradient based on progress
-                juce::Colour startColor(0xffb4a5d8);  // Soft Lavender
-                juce::Colour endColor(0xffd4a5a5);    // Dusty Rose
-                juce::Colour grainColor = startColor.interpolatedWith(endColor, progress);
+                const float bloomRadius = static_cast<float>(radius) * (0.62f + envelopeSize * 0.35f);
+                const float wobble = 0.18f + 0.08f * std::sin(position * 47.0f + progress * 6.0f);
 
-                // Draw grain with glow effect
-                g.setColour(grainColor.withAlpha(0.3f));
-                g.fillEllipse(static_cast<float>(x - radius * 2),
-                             static_cast<float>(y - radius * 2),
-                             static_cast<float>(radius * 4),
-                             static_cast<float>(radius * 4));
+                juce::Path blot;
+                for (int p = 0; p < 10; ++p)
+                {
+                    const float angle = juce::MathConstants<float>::twoPi * static_cast<float>(p) / 10.0f;
+                    const float irregularity = 1.0f + wobble * std::sin(angle * 3.0f + position * 19.0f)
+                                             + 0.08f * std::cos(angle * 5.0f + progress * 11.0f);
+                    const float px = static_cast<float>(x) + std::cos(angle) * bloomRadius * irregularity;
+                    const float py = static_cast<float>(y) + std::sin(angle) * bloomRadius * irregularity;
 
-                g.setColour(grainColor.withAlpha(0.9f * envelopeSize));
-                g.fillEllipse(static_cast<float>(x - radius),
-                             static_cast<float>(y - radius),
-                             static_cast<float>(radius * 2),
-                             static_cast<float>(radius * 2));
+                    if (p == 0)
+                        blot.startNewSubPath(px, py);
+                    else
+                        blot.lineTo(px, py);
+                }
+                blot.closeSubPath();
 
-                // Optional: draw line connecting grain to its position on waveform center
-                g.setColour(grainColor.withAlpha(0.1f));
+                juce::Path halo;
+                for (int p = 0; p < 12; ++p)
+                {
+                    const float angle = juce::MathConstants<float>::twoPi * static_cast<float>(p) / 12.0f;
+                    const float irregularity = 1.0f + wobble * 0.7f * std::cos(angle * 4.0f + position * 23.0f);
+                    const float px = static_cast<float>(x) + std::cos(angle) * bloomRadius * 1.85f * irregularity;
+                    const float py = static_cast<float>(y) + std::sin(angle) * bloomRadius * 1.55f * irregularity;
+
+                    if (p == 0)
+                        halo.startNewSubPath(px, py);
+                    else
+                        halo.lineTo(px, py);
+                }
+                halo.closeSubPath();
+
+                g.setColour(juce::Colour(0xff050505).withAlpha(0.075f * envelopeSize));
+                g.fillPath(halo);
+                g.setColour(juce::Colour(0xff050505).withAlpha(0.48f * envelopeSize));
+                g.fillPath(blot);
+                g.setColour(juce::Colour(0xff050505).withAlpha(0.72f * envelopeSize));
+                g.fillEllipse(static_cast<float>(x) - bloomRadius * 0.38f,
+                              static_cast<float>(y) - bloomRadius * 0.34f,
+                              bloomRadius * 0.76f,
+                              bloomRadius * 0.68f);
+
+                g.setColour(juce::Colour(0xff050505).withAlpha(0.13f));
                 g.drawLine(static_cast<float>(x), static_cast<float>(bounds.getCentreY()),
                           static_cast<float>(x), static_cast<float>(y), 1.0f);
             }
@@ -291,7 +336,7 @@ private:
 
         if (activeCount > 0)
         {
-            g.setColour(juce::Colour(0xfff5f1e8).withAlpha(0.5f));
+            g.setColour(juce::Colour(0xff050505).withAlpha(0.64f));
             g.setFont(10.0f);
             g.drawText(juce::String(activeCount) + " grains",
                       bounds.removeFromBottom(12).removeFromRight(80),

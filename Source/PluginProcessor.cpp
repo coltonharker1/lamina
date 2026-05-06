@@ -53,6 +53,13 @@ namespace ParameterIDs
     // Octave randomization parameters
     const juce::String octaveSpread { "octaveSpread" };
     const juce::String octaveProbability { "octaveProbability" };
+    const juce::String thirdOctaveProb { "thirdOctaveProb" };
+
+    // Sound quality / randomization parameters (ported from grains-vst)
+    const juce::String filterRandomization { "filterRandomization" };
+    const juce::String detuneCents { "detuneCents" };
+    const juce::String jitterPercent { "jitterPercent" };
+    const juce::String grainSizeRandomization { "grainSizeRandomization" };
 }
 
 //==============================================================================
@@ -69,6 +76,61 @@ GrainsAudioProcessor::GrainsAudioProcessor()
        apvts (*this, nullptr, "Parameters", createParameterLayout())
 #endif
 {
+    cacheParameterPointers();
+}
+
+void GrainsAudioProcessor::cacheParameterPointers()
+{
+    auto get = [this](const juce::String& id) { return apvts.getRawParameterValue(id); };
+
+    params.position           = get(ParameterIDs::position);
+    params.spray              = get(ParameterIDs::spray);
+    params.grainSize          = get(ParameterIDs::grainSize);
+    params.density            = get(ParameterIDs::density);
+    params.pitch              = get(ParameterIDs::pitch);
+    params.pan                = get(ParameterIDs::pan);
+    params.gain               = get(ParameterIDs::gain);
+
+    params.panSpread          = get(ParameterIDs::panSpread);
+    params.freeze             = get(ParameterIDs::freeze);
+    params.reverseProbability = get(ParameterIDs::reverseProbability);
+
+    params.timeStretch        = get(ParameterIDs::timeStretch);
+    params.grainShape         = get(ParameterIDs::grainShape);
+    params.pitchTimeLock      = get(ParameterIDs::pitchTimeLock);
+
+    params.envAttack          = get(ParameterIDs::envAttack);
+    params.envDecay           = get(ParameterIDs::envDecay);
+    params.envSustain         = get(ParameterIDs::envSustain);
+    params.envRelease         = get(ParameterIDs::envRelease);
+
+    params.lpFilterEnabled    = get(ParameterIDs::lpFilterEnabled);
+    params.lpFilterCutoff     = get(ParameterIDs::lpFilterCutoff);
+    params.lpFilterResonance  = get(ParameterIDs::lpFilterResonance);
+
+    params.hpFilterEnabled    = get(ParameterIDs::hpFilterEnabled);
+    params.hpFilterCutoff     = get(ParameterIDs::hpFilterCutoff);
+    params.hpFilterResonance  = get(ParameterIDs::hpFilterResonance);
+
+    params.octaveSpread       = get(ParameterIDs::octaveSpread);
+    params.octaveProbability  = get(ParameterIDs::octaveProbability);
+    params.thirdOctaveProb    = get(ParameterIDs::thirdOctaveProb);
+
+    params.filterRandomization    = get(ParameterIDs::filterRandomization);
+    params.detuneCents            = get(ParameterIDs::detuneCents);
+    params.jitterPercent          = get(ParameterIDs::jitterPercent);
+    params.grainSizeRandomization = get(ParameterIDs::grainSizeRandomization);
+
+    for (int i = 0; i < 4; ++i)
+    {
+        params.lfoRate[i]      = get(ParameterIDs::lfoRate(i));
+        params.lfoDepth[i]     = get(ParameterIDs::lfoDepth(i));
+        params.lfoWaveform[i]  = get(ParameterIDs::lfoWaveform(i));
+        params.lfoTarget[i]    = get(ParameterIDs::lfoTarget(i));
+        params.lfoTempoSync[i] = get(ParameterIDs::lfoTempoSync(i));
+        params.lfoPhase[i]     = get(ParameterIDs::lfoPhase(i));
+        params.lfoEnabled[i]   = get(ParameterIDs::lfoEnabled(i));
+    }
 }
 
 GrainsAudioProcessor::~GrainsAudioProcessor()
@@ -83,7 +145,7 @@ juce::AudioProcessorValueTreeState::ParameterLayout GrainsAudioProcessor::create
     // Position: Where in the sample grains spawn (0-100%)
     layout.add(std::make_unique<juce::AudioParameterFloat>(
         ParameterIDs::position,
-        "Position",
+        "Focus",
         juce::NormalisableRange<float>(0.0f, 100.0f, 0.1f),
         50.0f,  // Default: middle of sample
         "%"
@@ -92,7 +154,7 @@ juce::AudioProcessorValueTreeState::ParameterLayout GrainsAudioProcessor::create
     // Spray: Random deviation from position (0-100%)
     layout.add(std::make_unique<juce::AudioParameterFloat>(
         ParameterIDs::spray,
-        "Spray",
+        "Scatter",
         juce::NormalisableRange<float>(0.0f, 100.0f, 0.1f),
         10.0f,  // Default: 10% randomization
         "%"
@@ -101,7 +163,7 @@ juce::AudioProcessorValueTreeState::ParameterLayout GrainsAudioProcessor::create
     // Grain Size: Duration of each grain (5-500ms)
     layout.add(std::make_unique<juce::AudioParameterFloat>(
         ParameterIDs::grainSize,
-        "Grain Size",
+        "Thread",
         juce::NormalisableRange<float>(5.0f, 500.0f, 1.0f, 0.3f),  // Skewed toward smaller values
         100.0f,  // Default: 100ms
         "ms"
@@ -110,7 +172,7 @@ juce::AudioProcessorValueTreeState::ParameterLayout GrainsAudioProcessor::create
     // Density: Grains per second (1-100)
     layout.add(std::make_unique<juce::AudioParameterFloat>(
         ParameterIDs::density,
-        "Density",
+        "Cloud",
         juce::NormalisableRange<float>(1.0f, 100.0f, 0.1f, 0.5f),  // Skewed toward lower values
         20.0f,  // Default: 20 grains/sec
         " gr/s"
@@ -119,7 +181,7 @@ juce::AudioProcessorValueTreeState::ParameterLayout GrainsAudioProcessor::create
     // Pitch: Playback speed (-24 to +24 semitones)
     layout.add(std::make_unique<juce::AudioParameterFloat>(
         ParameterIDs::pitch,
-        "Pitch",
+        "Lift",
         juce::NormalisableRange<float>(-24.0f, 24.0f, 0.01f),
         0.0f,  // Default: no pitch shift
         " st"
@@ -128,7 +190,7 @@ juce::AudioProcessorValueTreeState::ParameterLayout GrainsAudioProcessor::create
     // Pan: Stereo position (-100 to +100, 0 = center)
     layout.add(std::make_unique<juce::AudioParameterFloat>(
         ParameterIDs::pan,
-        "Pan",
+        "Drift",
         juce::NormalisableRange<float>(-100.0f, 100.0f, 1.0f),
         0.0f,  // Default: center
         ""
@@ -137,7 +199,7 @@ juce::AudioProcessorValueTreeState::ParameterLayout GrainsAudioProcessor::create
     // Gain: Output level (0-200%)
     layout.add(std::make_unique<juce::AudioParameterFloat>(
         ParameterIDs::gain,
-        "Gain",
+        "Exposure",
         juce::NormalisableRange<float>(0.0f, 200.0f, 0.1f),
         100.0f,  // Default: 100% (unity gain)
         "%"
@@ -146,7 +208,7 @@ juce::AudioProcessorValueTreeState::ParameterLayout GrainsAudioProcessor::create
     // Pan Spread: Random deviation from pan position (0-100%)
     layout.add(std::make_unique<juce::AudioParameterFloat>(
         ParameterIDs::panSpread,
-        "Pan Spread",
+        "Halo",
         juce::NormalisableRange<float>(0.0f, 100.0f, 0.1f),
         0.0f,  // Default: no randomization
         "%"
@@ -354,11 +416,11 @@ juce::AudioProcessorValueTreeState::ParameterLayout GrainsAudioProcessor::create
         ""
     ));
 
-    // Octave Spread: How many octaves to randomly shift (0-2 octaves)
+    // Octave Spread: How many octaves to randomly shift (0-3 octaves)
     layout.add(std::make_unique<juce::AudioParameterFloat>(
         ParameterIDs::octaveSpread,
         "Octave Spread",
-        juce::NormalisableRange<float>(0.0f, 2.0f, 0.1f),
+        juce::NormalisableRange<float>(0.0f, 3.0f, 0.1f),
         0.0f,  // Default: no octave shifting
         " oct"
     ));
@@ -369,6 +431,55 @@ juce::AudioProcessorValueTreeState::ParameterLayout GrainsAudioProcessor::create
         "Octave Probability",
         juce::NormalisableRange<float>(0.0f, 100.0f, 1.0f),
         0.0f,  // Default: 0% (disabled)
+        "%"
+    ));
+
+    // 3rd Octave Probability: Chance of 3rd octave shift when octaveSpread >= 3 (0-100%)
+    layout.add(std::make_unique<juce::AudioParameterFloat>(
+        ParameterIDs::thirdOctaveProb,
+        "3rd Octave Probability",
+        juce::NormalisableRange<float>(0.0f, 100.0f, 1.0f),
+        0.0f,  // Default: 0% (disabled)
+        "%"
+    ));
+
+    // =========================================================================
+    // Sound Quality / Randomization Parameters (ported from grains-vst)
+    // =========================================================================
+
+    // Filter Randomization: Per-grain filter cutoff variation (0-100%)
+    layout.add(std::make_unique<juce::AudioParameterFloat>(
+        ParameterIDs::filterRandomization,
+        "Filter Randomization",
+        juce::NormalisableRange<float>(0.0f, 100.0f, 0.1f),
+        0.0f,  // Default: 0% (no per-grain filtering)
+        "%"
+    ));
+
+    // Detune: Per-grain micro-detuning in cents (0-50)
+    layout.add(std::make_unique<juce::AudioParameterFloat>(
+        ParameterIDs::detuneCents,
+        "Detune",
+        juce::NormalisableRange<float>(0.0f, 50.0f, 0.1f),
+        0.0f,  // Default: 0 cents (no detuning)
+        " cents"
+    ));
+
+    // Jitter: Timing humanization / random offset (0-100%)
+    layout.add(std::make_unique<juce::AudioParameterFloat>(
+        ParameterIDs::jitterPercent,
+        "Jitter",
+        juce::NormalisableRange<float>(0.0f, 100.0f, 0.1f),
+        0.0f,  // Default: 0% (precise timing)
+        "%"
+    ));
+
+    // Grain Size Randomization: Per-grain size variation (0-100%)
+    layout.add(std::make_unique<juce::AudioParameterFloat>(
+        ParameterIDs::grainSizeRandomization,
+        "Size Randomization",
+        juce::NormalisableRange<float>(0.0f, 100.0f, 0.1f),
+        0.0f,  // Default: 0% (fixed size)
         "%"
     ));
 
@@ -503,26 +614,26 @@ void GrainsAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce:
     if (!sampleLoaded.load())
         return;
 
-    // Get parameter values
-    float position = apvts.getRawParameterValue(ParameterIDs::position)->load();
-    float spray = apvts.getRawParameterValue(ParameterIDs::spray)->load();
-    float grainSize = apvts.getRawParameterValue(ParameterIDs::grainSize)->load();
-    float density = apvts.getRawParameterValue(ParameterIDs::density)->load();
-    float pitch = apvts.getRawParameterValue(ParameterIDs::pitch)->load();
-    float pan = apvts.getRawParameterValue(ParameterIDs::pan)->load() / 100.0f;  // Convert to -1..1
-    float gain = apvts.getRawParameterValue(ParameterIDs::gain)->load() / 100.0f;  // Convert to multiplier
+    // Get parameter values via cached pointers (no per-block string lookups)
+    float position    = params.position->load();
+    float spray       = params.spray->load();
+    float grainSize   = params.grainSize->load();
+    float density     = params.density->load();
+    float pitch       = params.pitch->load();
+    float pan         = params.pan->load() / 100.0f;  // Convert to -1..1
+    float gain        = params.gain->load() / 100.0f;  // Convert to multiplier
 
     // Phase 2 parameters
-    float panSpread = apvts.getRawParameterValue(ParameterIDs::panSpread)->load();
-    bool freeze = apvts.getRawParameterValue(ParameterIDs::freeze)->load() > 0.5f;
+    float panSpread = params.panSpread->load();
+    bool  freeze    = params.freeze->load() > 0.5f;
 
     // Reverse: use probability directly (0% = no reverse, 100% = all reverse)
-    float reverse = apvts.getRawParameterValue(ParameterIDs::reverseProbability)->load();
+    float reverse = params.reverseProbability->load();
 
     // Phase 3 parameters
-    float timeStretch = apvts.getRawParameterValue(ParameterIDs::timeStretch)->load();
-    int grainShape = static_cast<int>(apvts.getRawParameterValue(ParameterIDs::grainShape)->load());
-    bool pitchTimeLock = apvts.getRawParameterValue(ParameterIDs::pitchTimeLock)->load() > 0.5f;
+    float timeStretch  = params.timeStretch->load();
+    int   grainShape   = static_cast<int>(params.grainShape->load());
+    bool  pitchTimeLock = params.pitchTimeLock->load() > 0.5f;
 
     // If pitch-time is locked, adjust time stretch to match pitch (legacy behavior)
     if (pitchTimeLock)
@@ -534,10 +645,10 @@ void GrainsAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce:
     // =========================================================================
     // Phase 5: Set envelope parameters
     // =========================================================================
-    float envAttack = apvts.getRawParameterValue(ParameterIDs::envAttack)->load();
-    float envDecay = apvts.getRawParameterValue(ParameterIDs::envDecay)->load();
-    float envSustain = apvts.getRawParameterValue(ParameterIDs::envSustain)->load() / 100.0f;  // Convert to 0-1
-    float envRelease = apvts.getRawParameterValue(ParameterIDs::envRelease)->load();
+    float envAttack  = params.envAttack->load();
+    float envDecay   = params.envDecay->load();
+    float envSustain = params.envSustain->load() / 100.0f;  // Convert to 0-1
+    float envRelease = params.envRelease->load();
 
     grainEngine.setEnvelopeAttack(envAttack);
     grainEngine.setEnvelopeDecay(envDecay);
@@ -548,16 +659,17 @@ void GrainsAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce:
     // Phase 4: Process LFOs and apply modulation
     // =========================================================================
 
-    // Get current BPM from host (for tempo sync)
-    auto playHead = getPlayHead();
-    float currentBPM = 120.0f;  // Default BPM
-    if (playHead != nullptr)
+    // Get current BPM from host (for tempo sync). Use the JUCE 7+ getPosition()
+    // API — getCurrentPosition() is deprecated and silently returns false in
+    // newer hosts (Logic, Cubase 13+), which would force tempo sync to default
+    // to 120 BPM without warning.
+    float currentBPM = 120.0f;
+    if (auto* playHead = getPlayHead())
     {
-        juce::AudioPlayHead::CurrentPositionInfo posInfo;
-        if (playHead->getCurrentPosition(posInfo))
+        if (auto pos = playHead->getPosition())
         {
-            if (posInfo.bpm > 0.0)
-                currentBPM = static_cast<float>(posInfo.bpm);
+            if (auto bpm = pos->getBpm())
+                currentBPM = static_cast<float>(*bpm);
         }
     }
 
@@ -575,17 +687,17 @@ void GrainsAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce:
     for (int i = 0; i < 4; ++i)
     {
         // Check if LFO is enabled
-        bool lfoEnabled = apvts.getRawParameterValue(ParameterIDs::lfoEnabled(i))->load() > 0.5f;
+        bool lfoEnabled = params.lfoEnabled[i]->load() > 0.5f;
         if (!lfoEnabled)
             continue;  // Skip this LFO if disabled
 
         // Get LFO parameters
-        float lfoRate = apvts.getRawParameterValue(ParameterIDs::lfoRate(i))->load();
-        float lfoDepth = apvts.getRawParameterValue(ParameterIDs::lfoDepth(i))->load() / 100.0f;  // Convert to 0-1
-        int lfoWaveform = static_cast<int>(apvts.getRawParameterValue(ParameterIDs::lfoWaveform(i))->load());
-        int lfoTarget = static_cast<int>(apvts.getRawParameterValue(ParameterIDs::lfoTarget(i))->load());
-        bool lfoTempoSync = apvts.getRawParameterValue(ParameterIDs::lfoTempoSync(i))->load() > 0.5f;
-        float lfoPhase = apvts.getRawParameterValue(ParameterIDs::lfoPhase(i))->load();
+        float lfoRate     = params.lfoRate[i]->load();
+        float lfoDepth    = params.lfoDepth[i]->load() / 100.0f;  // Convert to 0-1
+        int   lfoWaveform = static_cast<int>(params.lfoWaveform[i]->load());
+        int   lfoTarget   = static_cast<int>(params.lfoTarget[i]->load());
+        bool  lfoTempoSync = params.lfoTempoSync[i]->load() > 0.5f;
+        float lfoPhase    = params.lfoPhase[i]->load();
 
         // Update LFO state
         lfos[i].setRate(lfoRate);
@@ -655,31 +767,39 @@ void GrainsAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce:
     }
 
     // Get octave parameters
-    float octaveSpread = apvts.getRawParameterValue(ParameterIDs::octaveSpread)->load();
-    float octaveProbability = apvts.getRawParameterValue(ParameterIDs::octaveProbability)->load();
+    float octaveSpread      = params.octaveSpread->load();
+    float octaveProbability = params.octaveProbability->load();
+    float thirdOctaveProb   = params.thirdOctaveProb->load();
+
+    // Get sound quality / randomization parameters
+    float filterRandomization    = params.filterRandomization->load();
+    float detuneCents            = params.detuneCents->load();
+    float jitterPercent          = params.jitterPercent->load();
+    float grainSizeRandomization = params.grainSizeRandomization->load();
 
     // Generate grains for any active notes
     grainEngine.process(buffer, position / 100.0f, spray, grainSize, density,
                        pitch, 0.0f, pan, panSpread, freeze, reverse, timeStretch, grainShape,
-                       octaveSpread, octaveProbability);
+                       octaveSpread, octaveProbability, thirdOctaveProb,
+                       filterRandomization, detuneCents, jitterPercent, grainSizeRandomization);
 
     // =========================================================================
     // Apply Filters (Low-pass and High-pass can be active simultaneously)
     // =========================================================================
 
     // Low-pass filter
-    bool lpEnabled = apvts.getRawParameterValue(ParameterIDs::lpFilterEnabled)->load() > 0.5f;
-    float lpCutoff = apvts.getRawParameterValue(ParameterIDs::lpFilterCutoff)->load();
-    float lpResonance = apvts.getRawParameterValue(ParameterIDs::lpFilterResonance)->load();
+    bool  lpEnabled   = params.lpFilterEnabled->load() > 0.5f;
+    float lpCutoff    = params.lpFilterCutoff->load();
+    float lpResonance = params.lpFilterResonance->load();
 
     filter.setLowPassEnabled(lpEnabled);
     filter.setLowPassCutoff(lpCutoff);
     filter.setLowPassResonance(lpResonance);
 
     // High-pass filter
-    bool hpEnabled = apvts.getRawParameterValue(ParameterIDs::hpFilterEnabled)->load() > 0.5f;
-    float hpCutoff = apvts.getRawParameterValue(ParameterIDs::hpFilterCutoff)->load();
-    float hpResonance = apvts.getRawParameterValue(ParameterIDs::hpFilterResonance)->load();
+    bool  hpEnabled   = params.hpFilterEnabled->load() > 0.5f;
+    float hpCutoff    = params.hpFilterCutoff->load();
+    float hpResonance = params.hpFilterResonance->load();
 
     filter.setHighPassEnabled(hpEnabled);
     filter.setHighPassCutoff(hpCutoff);
@@ -724,40 +844,43 @@ void GrainsAudioProcessor::setStateInformation (const void* data, int sizeInByte
 //==============================================================================
 void GrainsAudioProcessor::loadSampleFromFile(const juce::File& file)
 {
-    // Create audio format manager
+    // Build the new buffer entirely on the message thread, with no contact
+    // with the audio thread. Reallocations, file reads and the mono mixdown
+    // all happen on a local AudioBuffer that the audio thread cannot see.
     juce::AudioFormatManager formatManager;
     formatManager.registerBasicFormats();
 
-    // Try to read the file
     std::unique_ptr<juce::AudioFormatReader> reader(formatManager.createReaderFor(file));
-
-    if (reader != nullptr)
-    {
-        // Resize sample buffer
-        sampleBuffer.setSize(reader->numChannels, static_cast<int>(reader->lengthInSamples));
-
-        // Read audio data
-        reader->read(&sampleBuffer, 0, static_cast<int>(reader->lengthInSamples), 0, true, true);
-
-        // If stereo, convert to mono by averaging channels
-        if (sampleBuffer.getNumChannels() > 1)
-        {
-            sampleBuffer.addFrom(0, 0, sampleBuffer, 1, 0, sampleBuffer.getNumSamples(), 0.5f);
-            sampleBuffer.applyGain(0, 0, sampleBuffer.getNumSamples(), 0.5f);
-            sampleBuffer.setSize(1, sampleBuffer.getNumSamples(), true, false, false);
-        }
-
-        // Update grain engine
-        grainEngine.setSourceBuffer(sampleBuffer);
-        sampleLoaded.store(true);
-
-        DBG("Loaded sample: " + file.getFileName() + " (" +
-            juce::String(sampleBuffer.getNumSamples()) + " samples)");
-    }
-    else
+    if (reader == nullptr)
     {
         DBG("Failed to load sample: " + file.getFileName());
+        return;
     }
+
+    juce::AudioBuffer<float> newBuffer(static_cast<int>(reader->numChannels),
+                                       static_cast<int>(reader->lengthInSamples));
+    reader->read(&newBuffer, 0, static_cast<int>(reader->lengthInSamples), 0, true, true);
+
+    if (newBuffer.getNumChannels() > 1)
+    {
+        newBuffer.addFrom(0, 0, newBuffer, 1, 0, newBuffer.getNumSamples(), 0.5f);
+        newBuffer.applyGain(0, 0, newBuffer.getNumSamples(), 0.5f);
+        newBuffer.setSize(1, newBuffer.getNumSamples(), true, false, false);
+    }
+
+    // Atomic handoff: take the audio callback lock so processBlock cannot run
+    // while we move the new data into sampleBuffer and re-point the engine.
+    // The engine's setSourceBuffer() also deactivates every active voice, so
+    // no voice keeps reading the old underlying float* after this returns.
+    {
+        const juce::ScopedLock sl(getCallbackLock());
+        sampleBuffer = std::move(newBuffer);
+        grainEngine.setSourceBuffer(sampleBuffer);
+        sampleLoaded.store(true);
+    }
+
+    DBG("Loaded sample: " + file.getFileName() + " (" +
+        juce::String(sampleBuffer.getNumSamples()) + " samples)");
 }
 
 //==============================================================================

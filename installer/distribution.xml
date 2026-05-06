@@ -1,21 +1,21 @@
 <?xml version="1.0" encoding="utf-8"?>
 <installer-gui-script minSpecVersion="1">
-    <title>Somnia v1.0</title>
-    <organization>com.projectsonaris</organization>
+    <title>Lamina v1.0</title>
+    <organization>com.projectsonorous</organization>
     <welcome file="welcome.txt"/>
     <options customize="never" require-scripts="false" hostArchitectures="arm64,x86_64"/>
     <domains enable_localSystem="true"/>
 
     <choices-outline>
         <line choice="default">
-            <line choice="com.projectsonaris.somnia"/>
+            <line choice="com.projectsonorous.lamina"/>
         </line>
     </choices-outline>
 
     <choice id="default"/>
-    <choice id="com.projectsonaris.somnia" visible="false">
-        <pkg-ref id="com.projectsonaris.somnia"/>
+    <choice id="com.projectsonorous.lamina" visible="false">
+        <pkg-ref id="com.projectsonorous.lamina"/>
     </choice>
 
-    <pkg-ref id="com.projectsonaris.somnia" version="1.0" onConclusion="none">Somnia-component.pkg</pkg-ref>
+    <pkg-ref id="com.projectsonorous.lamina" version="1.0" onConclusion="none">Lamina-component.pkg</pkg-ref>
 </installer-gui-script>

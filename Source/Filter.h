@@ -31,11 +31,15 @@ public:
         lowPassFilter.prepare(spec);
         highPassFilter.prepare(spec);
 
-        // Reset state
+        // One-time allocation: hand the duplicator a properly-sized Coefficients
+        // object now (off the audio thread). Subsequent updates write directly into
+        // its 5-element coefficient array — no audio-thread heap activity.
+        *lowPassFilter.state  = *juce::dsp::IIR::Coefficients<float>::makeLowPass (sampleRate, 1000.0f, 0.707f);
+        *highPassFilter.state = *juce::dsp::IIR::Coefficients<float>::makeHighPass(sampleRate, 1000.0f, 0.707f);
+
         lowPassFilter.reset();
         highPassFilter.reset();
 
-        // Update coefficients with correct sample rate
         updateFilterCoefficients();
     }
 
@@ -100,22 +104,51 @@ private:
         updateHighPassCoefficients();
     }
 
+    // RBJ biquad cookbook math written directly into the duplicator's pre-allocated
+    // Coefficients<float>::coefficients array. This avoids the per-update heap
+    // alloc/dealloc pair that Coefficients::makeLowPass/makeHighPass produces, which
+    // is the standard JUCE real-time hazard when filter parameters are updated each
+    // block.
+    static void writeBiquadInPlace(juce::Array<float>& dest,
+                                   double b0, double b1, double b2,
+                                   double a0, double a1, double a2) noexcept
+    {
+        const float invA0 = static_cast<float>(1.0 / a0);
+        dest.getReference(0) = static_cast<float>(b0) * invA0;
+        dest.getReference(1) = static_cast<float>(b1) * invA0;
+        dest.getReference(2) = static_cast<float>(b2) * invA0;
+        dest.getReference(3) = static_cast<float>(a1) * invA0;
+        dest.getReference(4) = static_cast<float>(a2) * invA0;
+    }
+
     void updateLowPassCoefficients()
     {
-        *lowPassFilter.state = *juce::dsp::IIR::Coefficients<float>::makeLowPass(
-            currentSampleRate,
-            lowPassCutoff,
-            lowPassResonance
-        );
+        const double w     = 2.0 * juce::MathConstants<double>::pi * lowPassCutoff / currentSampleRate;
+        const double cosW  = std::cos(w);
+        const double alpha = std::sin(w) / (2.0 * lowPassResonance);
+
+        writeBiquadInPlace(lowPassFilter.state->coefficients,
+                           (1.0 - cosW) * 0.5,  // b0
+                           (1.0 - cosW),         // b1
+                           (1.0 - cosW) * 0.5,  // b2
+                           1.0 + alpha,          // a0
+                           -2.0 * cosW,          // a1
+                           1.0 - alpha);         // a2
     }
 
     void updateHighPassCoefficients()
     {
-        *highPassFilter.state = *juce::dsp::IIR::Coefficients<float>::makeHighPass(
-            currentSampleRate,
-            highPassCutoff,
-            highPassResonance
-        );
+        const double w     = 2.0 * juce::MathConstants<double>::pi * highPassCutoff / currentSampleRate;
+        const double cosW  = std::cos(w);
+        const double alpha = std::sin(w) / (2.0 * highPassResonance);
+
+        writeBiquadInPlace(highPassFilter.state->coefficients,
+                            (1.0 + cosW) * 0.5,  // b0
+                           -(1.0 + cosW),         // b1
+                            (1.0 + cosW) * 0.5,  // b2
+                           1.0 + alpha,           // a0
+                           -2.0 * cosW,           // a1
+                           1.0 - alpha);          // a2
     }
 
     // Low-pass filter state

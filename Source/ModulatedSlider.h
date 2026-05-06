@@ -8,7 +8,7 @@
  * Features:
  * - Draws a pulsing glow ring around the slider when modulated
  * - Automatically fades in/out based on modulation state
- * - Uses Somnia's color scheme (cyan glow)
+ * - Uses Lamina's color scheme (cyan glow)
  */
 class ModulatedSlider : public juce::Slider
 {

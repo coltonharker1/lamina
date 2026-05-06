@@ -9,22 +9,28 @@ set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
 # Add JUCE
-add_subdirectory(/Users/colton/Downloads/JUCE ${CMAKE_CURRENT_BINARY_DIR}/JUCE)
+add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/../JUCE ${CMAKE_CURRENT_BINARY_DIR}/JUCE)
 
 # Plugin configuration
 juce_add_plugin(GrainsVST
-    COMPANY_NAME "Project Sonaris"
-    BUNDLE_ID "com.projectsonaris.somnia"
+    COMPANY_NAME "Project Sonorous"
+    BUNDLE_ID "com.projectsonorous.lamina"
     IS_SYNTH TRUE                                 # MIDI instrument/synth
     NEEDS_MIDI_INPUT TRUE                         # Accepts MIDI notes
     NEEDS_MIDI_OUTPUT FALSE
     IS_MIDI_EFFECT FALSE
     EDITOR_WANTS_KEYBOARD_FOCUS FALSE
     COPY_PLUGIN_AFTER_BUILD TRUE                  # Automatically install to system
-    PLUGIN_MANUFACTURER_CODE PjSn                 # Project Sonaris 4-char code
-    PLUGIN_CODE Somn                              # Somnia 4-char identifier
+    PLUGIN_MANUFACTURER_CODE PjSo                 # Project Sonorous 4-char code
+    PLUGIN_CODE Lmna                              # Lamina 4-char identifier
     FORMATS VST3 AU                               # Build VST3 and AU (macOS)
-    PRODUCT_NAME "Somnia")                        # Display name in DAW
+    PRODUCT_NAME "Lamina")                        # Display name in DAW
+
+juce_add_binary_data(LaminaBinaryData
+    SOURCES
+        Source/Fonts/InstrumentSerif-Regular.ttf
+        Source/Fonts/InstrumentSerif-Italic.ttf
+        Source/Fonts/JetBrainsMono-Regular.ttf)
 
 # Source files
 target_sources(GrainsVST
@@ -38,11 +44,13 @@ target_sources(GrainsVST
         Source/Filter.h
         Source/UnifiedVisualization.h
         Source/InteractiveADSREnvelope.h
-        Source/ModulatedSlider.h)
+        Source/ModulatedSlider.h
+        Source/LookupTables.h)
 
 # Link JUCE modules
 target_link_libraries(GrainsVST
     PRIVATE
+        LaminaBinaryData
         juce::juce_audio_basics
         juce::juce_audio_devices
         juce::juce_audio_formats
