@@ -15,12 +15,13 @@ VST3 and Audio Unit, MIDI in / stereo out.
 - Thread-safe sample swapping — change sources mid-playback without crashes
 
 **Grain controls**
-- **Position** — playhead in the source sample (0–100%)
-- **Spray** — random position deviation
-- **Size** — grain duration, 5–500 ms
-- **Density** — grains/second, 1–100
-- **Pitch** — semitone shift, ±24
-- **Pan** + **Pan Spread** — center + per-grain randomization
+- **Focus** — playhead position in the source sample (0–100%)
+- **Scatter** — random position deviation around Focus
+- **Thread** — grain duration, 5–500 ms
+- **Cloud** — grain density, 1–100 grains/sec
+- **Lift** — pitch shift in semitones, ±24
+- **Drift** + **Halo** — stereo position + per-grain pan randomization
+- **Exposure** — output level, 0–200%
 - **Reverse** — probability that a grain plays backwards
 - **Time Stretch** — independent of pitch (0.25× – 4×) when unlocked
 - **Freeze** — locks the playhead for an infinite drone
