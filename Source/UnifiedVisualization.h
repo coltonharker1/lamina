@@ -339,7 +339,7 @@ private:
             g.setColour(juce::Colour(0xff050505).withAlpha(0.64f));
             g.setFont(10.0f);
             g.drawText(juce::String(activeCount) + " grains",
-                      bounds.removeFromBottom(12).removeFromRight(80),
+                      bounds.withHeight(12).withY(bounds.getBottom() - 28).removeFromRight(80),
                       juce::Justification::centredRight);
         }
     }
