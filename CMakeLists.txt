@@ -11,6 +11,23 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 # Add JUCE
 add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/../JUCE ${CMAKE_CURRENT_BINARY_DIR}/JUCE)
 
+# Add sonorous-kit. Prefer a sibling clone for active development across all
+# Project Sonorous repos; fall back to fetching from GitHub for casual / first-
+# time clones so `cmake -B build` works out of the box.
+if(EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/../sonorous-kit/CMakeLists.txt)
+    message(STATUS "Lamina: using sibling sonorous-kit")
+    add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/../sonorous-kit
+                     ${CMAKE_CURRENT_BINARY_DIR}/sonorous-kit)
+else()
+    message(STATUS "Lamina: fetching sonorous-kit from GitHub")
+    include(FetchContent)
+    FetchContent_Declare(
+        sonorous_kit
+        GIT_REPOSITORY https://github.com/coltonharker1/sonorous-kit.git
+        GIT_TAG        v0.2.0)
+    FetchContent_MakeAvailable(sonorous_kit)
+endif()
+
 # Plugin configuration
 juce_add_plugin(GrainsVST
     COMPANY_NAME "Project Sonorous"
@@ -26,11 +43,10 @@ juce_add_plugin(GrainsVST
     FORMATS VST3 AU                               # Build VST3 and AU (macOS)
     PRODUCT_NAME "Lamina")                        # Display name in DAW
 
-juce_add_binary_data(LaminaBinaryData
-    SOURCES
-        Source/Fonts/InstrumentSerif-Regular.ttf
-        Source/Fonts/InstrumentSerif-Italic.ttf
-        Source/Fonts/JetBrainsMono-Regular.ttf)
+# Fonts are now provided by sonorous_visual — no per-plugin BinaryData target
+# needed. The Source/Fonts/ TTFs remain in the repo for now in case any
+# instrument-specific code still references them; they can be removed once the
+# editor is fully migrated.
 
 # Source files
 target_sources(GrainsVST
@@ -47,10 +63,10 @@ target_sources(GrainsVST
         Source/ModulatedSlider.h
         Source/LookupTables.h)
 
-# Link JUCE modules
+# Link JUCE modules and the Sonorous visual kit
 target_link_libraries(GrainsVST
     PRIVATE
-        LaminaBinaryData
+        sonorous_visual
         juce::juce_audio_basics
         juce::juce_audio_devices
         juce::juce_audio_formats

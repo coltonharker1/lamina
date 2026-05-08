@@ -1,13 +1,15 @@
 #include "PluginProcessor.h"
 #include "PluginEditor.h"
-#include "BinaryData.h"
 
+// Color constants and font helpers are now sourced from sonorous-kit. The local
+// names here are kept (as constexpr forwarders / thin wrappers) so the rest of
+// this file's call sites don't need to change.
 namespace
 {
-constexpr juce::uint32 paper = 0xfff4f1ea;
-constexpr juce::uint32 ink = 0xff050505;
-constexpr juce::uint32 quietInk = 0xaa000000;
-constexpr juce::uint32 faintInk = 0x16000000;
+constexpr juce::uint32 paper    = sonorous::palette::paper;
+constexpr juce::uint32 ink      = sonorous::palette::ink;
+constexpr juce::uint32 quietInk = sonorous::palette::quietInk;
+constexpr juce::uint32 faintInk = sonorous::palette::faintInk;
 
 juce::FontOptions monoFont(juce::Typeface::Ptr typeface, float height)
 {
@@ -20,112 +22,9 @@ juce::FontOptions serifFont(juce::Typeface::Ptr typeface, float height)
 }
 }
 
-void GrainsAudioProcessorEditor::MonoPrintLookAndFeel::drawRotarySlider(
-    juce::Graphics& g, int x, int y, int width, int height, float sliderPosProportional,
-    float rotaryStartAngle, float rotaryEndAngle, juce::Slider&)
-{
-    auto bounds = juce::Rectangle<float>(static_cast<float>(x), static_cast<float>(y),
-                                         static_cast<float>(width), static_cast<float>(height)).reduced(4.0f);
-    auto centre = bounds.getCentre();
-    const float radius = juce::jmin(bounds.getWidth(), bounds.getHeight()) * 0.39f;
-    const float angle = rotaryStartAngle + sliderPosProportional * (rotaryEndAngle - rotaryStartAngle);
-
-    g.setColour(juce::Colour(ink));
-    g.drawEllipse(centre.x - radius, centre.y - radius, radius * 2.0f, radius * 2.0f, 1.0f);
-    g.drawEllipse(centre.x - radius * 0.76f, centre.y - radius * 0.76f,
-                  radius * 1.52f, radius * 1.52f, 0.6f);
-
-    for (int i = 0; i <= 18; ++i)
-    {
-        const float t = static_cast<float>(i) / 18.0f;
-        const float tickAngle = rotaryStartAngle + t * (rotaryEndAngle - rotaryStartAngle);
-        const float outer = radius * 1.22f;
-        const float inner = radius * (i % 3 == 0 ? 1.02f : 1.12f);
-        const auto p1 = centre + juce::Point<float>(std::cos(tickAngle) * inner, std::sin(tickAngle) * inner);
-        const auto p2 = centre + juce::Point<float>(std::cos(tickAngle) * outer, std::sin(tickAngle) * outer);
-        g.drawLine({ p1, p2 }, i % 3 == 0 ? 0.75f : 0.45f);
-    }
-
-    const auto indicator = centre + juce::Point<float>(std::cos(angle) * radius * 0.68f,
-                                                       std::sin(angle) * radius * 0.68f);
-    g.drawLine({ centre, indicator }, 1.8f);
-    g.fillEllipse(centre.x - 1.6f, centre.y - 1.6f, 3.2f, 3.2f);
-}
-
-void GrainsAudioProcessorEditor::MonoPrintLookAndFeel::drawButtonBackground(
-    juce::Graphics& g, juce::Button& button, const juce::Colour&,
-    bool shouldDrawButtonAsHighlighted, bool shouldDrawButtonAsDown)
-{
-    auto bounds = button.getLocalBounds().toFloat().reduced(0.5f);
-    const bool active = button.getToggleState() || shouldDrawButtonAsDown;
-    g.setColour(active ? juce::Colour(ink) : juce::Colour(paper));
-    g.fillRect(bounds);
-    g.setColour(juce::Colour(ink).withAlpha(shouldDrawButtonAsHighlighted ? 1.0f : 0.82f));
-    g.drawRect(bounds, active ? 1.4f : 0.9f);
-}
-
-void GrainsAudioProcessorEditor::MonoPrintLookAndFeel::drawButtonText(
-    juce::Graphics& g, juce::TextButton& button, bool, bool shouldDrawButtonAsDown)
-{
-    const bool active = button.getToggleState() || shouldDrawButtonAsDown;
-    g.setColour(active ? juce::Colour(paper) : juce::Colour(ink));
-    g.setFont(juce::Font(juce::FontOptions(9.0f)));
-    g.drawFittedText(button.getButtonText().toUpperCase(), button.getLocalBounds().reduced(6, 0),
-                     juce::Justification::centred, 1);
-}
-
-void GrainsAudioProcessorEditor::MonoPrintLookAndFeel::drawScrollbar(
-    juce::Graphics& g, juce::ScrollBar&, int x, int y, int width, int height,
-    bool isScrollbarVertical, int thumbStartPosition, int thumbSize, bool isMouseOver, bool isMouseDown)
-{
-    auto track = juce::Rectangle<int>(x, y, width, height).toFloat();
-    g.setColour(juce::Colour(faintInk));
-    g.fillRect(track);
-
-    juce::Rectangle<float> thumb;
-    if (isScrollbarVertical)
-        thumb = { track.getX() + 3.0f, track.getY() + static_cast<float>(thumbStartPosition),
-                  juce::jmax(2.0f, track.getWidth() - 6.0f), static_cast<float>(thumbSize) };
-    else
-        thumb = { track.getX() + static_cast<float>(thumbStartPosition), track.getY() + 3.0f,
-                  static_cast<float>(thumbSize), juce::jmax(2.0f, track.getHeight() - 6.0f) };
-
-    g.setColour(juce::Colour(ink).withAlpha((isMouseOver || isMouseDown) ? 0.72f : 0.48f));
-    g.fillRect(thumb);
-}
-
-juce::Font GrainsAudioProcessorEditor::MonoPrintLookAndFeel::getTabButtonFont(
-    juce::TabBarButton&, float)
-{
-    return juce::Font(juce::FontOptions(13.0f));
-}
-
-void GrainsAudioProcessorEditor::MonoPrintLookAndFeel::drawTabButton(
-    juce::TabBarButton& button, juce::Graphics& g, bool isMouseOver, bool isMouseDown)
-{
-    auto bounds = button.getLocalBounds().toFloat().reduced(0.5f, 0.0f);
-    const bool active = button.isFrontTab();
-
-    g.setColour(active ? juce::Colour(paper) : juce::Colour(paper).darker(0.025f));
-    g.fillRect(bounds);
-
-    g.setColour(juce::Colour(ink).withAlpha(active ? 0.95f : ((isMouseOver || isMouseDown) ? 0.55f : 0.28f)));
-    g.drawRect(bounds, active ? 1.1f : 0.75f);
-
-    if (active)
-        g.fillRect(bounds.withY(bounds.getBottom() - 1.5f).withHeight(1.5f));
-
-    drawTabButtonText(button, g, isMouseOver, isMouseDown);
-}
-
-void GrainsAudioProcessorEditor::MonoPrintLookAndFeel::drawTabButtonText(
-    juce::TabBarButton& button, juce::Graphics& g, bool, bool)
-{
-    g.setColour(juce::Colour(button.isFrontTab() ? ink : quietInk));
-    g.setFont(getTabButtonFont(button, static_cast<float>(button.getHeight())));
-    g.drawFittedText(button.getButtonText().toUpperCase(), button.getTextArea().reduced(10, 0),
-                     juce::Justification::centred, 1);
-}
+// MonoPrintLookAndFeel::* implementations were moved into sonorous_visual's
+// SonorousLookAndFeel. The editor's monoPrintLookAndFeel member is now a
+// SonorousLookAndFeel instance, so all draw routines come from the kit.
 
 //==============================================================================
 // MainContentComponent Implementation
@@ -659,15 +558,11 @@ void GrainsAudioProcessorEditor::AdvancedPanel::SoundDesignTab::resized()
 GrainsAudioProcessorEditor::GrainsAudioProcessorEditor (GrainsAudioProcessor& p)
     : AudioProcessorEditor (&p), audioProcessor (p), tooltipWindow(this, 1500)
 {
-    instrumentSerifRegular = juce::Typeface::createSystemTypefaceFor(
-        BinaryData::InstrumentSerifRegular_ttf,
-        BinaryData::InstrumentSerifRegular_ttfSize);
-    instrumentSerifItalic = juce::Typeface::createSystemTypefaceFor(
-        BinaryData::InstrumentSerifItalic_ttf,
-        BinaryData::InstrumentSerifItalic_ttfSize);
-    jetBrainsMono = juce::Typeface::createSystemTypefaceFor(
-        BinaryData::JetBrainsMonoRegular_ttf,
-        BinaryData::JetBrainsMonoRegular_ttfSize);
+    // Fonts come from sonorous-kit; the local Ptr members keep their names so
+    // the rest of the editor's monoFont(...)/serifFont(...) calls don't change.
+    instrumentSerifRegular = sonorous::typography::instrumentSerifRegular();
+    instrumentSerifItalic  = sonorous::typography::instrumentSerifItalic();
+    jetBrainsMono          = sonorous::typography::jetBrainsMono();
 
     // Set up load sample button
     loadSampleButton.setButtonText("+ Load Sample");
@@ -1118,10 +1013,14 @@ void GrainsAudioProcessorEditor::resized()
     // leftYPos is currently at the end of filters section
     // rightYPos is at the end of output knobs
     // ADSR should fill the space to make both columns equal height
-    int adsrHeight = filterSectionEndY - rightYPos - 16;  // Match filter end position, minus gap
-    interactiveADSR.setBounds(rightX, rightYPos, columnWidth, adsrHeight);
+    const int adsrPlateOverlap = 4;
+    const int adsrBottomGap = 4;
+    const int adsrVerticalNudge = 8;
+    int adsrHeight = filterSectionEndY - rightYPos - adsrBottomGap;  // Match filter end position, minus gap
+    interactiveADSR.setBounds(rightX - adsrPlateOverlap, rightYPos + adsrVerticalNudge,
+                              columnWidth + adsrPlateOverlap * 2, adsrHeight);
 
-    rightYPos += adsrHeight + 16;
+    rightYPos += adsrHeight + adsrBottomGap;
 
     // Extend filter section to match output section height
     leftYPos = rightYPos;

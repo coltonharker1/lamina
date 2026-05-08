@@ -41,7 +41,7 @@ public:
         g.setColour(juce::Colour(ink));
         g.drawRect(bounds, 1);
 
-        auto title = bounds.removeFromTop(24);
+        auto title = bounds.removeFromTop(titleStripHeight);
         g.drawLine(static_cast<float>(title.getX()), static_cast<float>(title.getBottom()) - 0.5f,
                    static_cast<float>(title.getRight()), static_cast<float>(title.getBottom()) - 0.5f, 1.0f);
         g.setFont(juce::Font(juce::FontOptions(7.5f)));
@@ -55,15 +55,13 @@ public:
         float sustain = sustainPercent / 100.0f;  // Convert to 0-1 for visualization
         float releaseMs = releaseParam ? releaseParam->get() : 500.0f;
 
-        // Calculate graph dimensions (scale to component size)
-        const float padding = 14.0f;
-        const float phaseLabelHeight = 18.0f;
-        const float graphWidth = bounds.getWidth() - (padding * 2);
-        const float graphHeight = bounds.getHeight() - phaseLabelHeight - (padding * 2);
-        const float graphTop = static_cast<float>(bounds.getY()) + padding;
-        const float graphBottom = graphTop + graphHeight;
-        const float graphLeft = static_cast<float>(bounds.getX()) + padding;
-        const float graphRight = graphLeft + graphWidth;
+        const auto plot = getPlotMetrics(bounds);
+        const float graphWidth = plot.graphWidth;
+        const float graphHeight = plot.graphHeight;
+        const float graphTop = plot.graphTop;
+        const float graphBottom = plot.graphBottom;
+        const float graphLeft = plot.graphLeft;
+        const float graphRight = plot.graphRight;
 
         // Use fixed-width zones for each ADSR phase - this prevents handles from moving each other
         // Each phase gets 25% of the width, and handles move within their zone based on parameter value
@@ -160,10 +158,10 @@ public:
         g.setColour(juce::Colour(quietInk));
         g.setFont(juce::Font(juce::FontOptions(8.0f)));
 
-        g.drawText("A", juce::Rectangle<float>(attackZoneStart, graphBottom + 3, zoneWidth, 14), juce::Justification::centred);
-        g.drawText("D", juce::Rectangle<float>(decayZoneStart, graphBottom + 3, zoneWidth, 14), juce::Justification::centred);
-        g.drawText("S", juce::Rectangle<float>(sustainZoneStart, graphBottom + 3, zoneWidth, 14), juce::Justification::centred);
-        g.drawText("R", juce::Rectangle<float>(releaseZoneStart, graphBottom + 3, zoneWidth, 14), juce::Justification::centred);
+        g.drawText("A", juce::Rectangle<float>(attackZoneStart, graphBottom + 1, zoneWidth, phaseLabelHeight), juce::Justification::centred);
+        g.drawText("D", juce::Rectangle<float>(decayZoneStart, graphBottom + 1, zoneWidth, phaseLabelHeight), juce::Justification::centred);
+        g.drawText("S", juce::Rectangle<float>(sustainZoneStart, graphBottom + 1, zoneWidth, phaseLabelHeight), juce::Justification::centred);
+        g.drawText("R", juce::Rectangle<float>(releaseZoneStart, graphBottom + 1, zoneWidth, phaseLabelHeight), juce::Justification::centred);
     }
 
     void mouseMove(const juce::MouseEvent& event) override
@@ -195,14 +193,13 @@ public:
 
         auto pos = event.position;
         auto bounds = getLocalBounds();
-        bounds.removeFromTop(24);
+        bounds.removeFromTop(titleStripHeight);
 
-        const float padding = 14.0f;
-        const float phaseLabelHeight = 18.0f;
-        const float graphWidth = bounds.getWidth() - (padding * 2);
-        const float graphHeight = bounds.getHeight() - phaseLabelHeight - (padding * 2);
-        const float graphTop = static_cast<float>(bounds.getY()) + padding;
-        const float graphLeft = static_cast<float>(bounds.getX()) + padding;
+        const auto plot = getPlotMetrics(bounds);
+        const float graphWidth = plot.graphWidth;
+        const float graphHeight = plot.graphHeight;
+        const float graphTop = plot.graphTop;
+        const float graphLeft = plot.graphLeft;
 
         // Fixed zones - each phase gets 25% of width
         const float zoneWidth = graphWidth / 4.0f;
@@ -256,6 +253,35 @@ public:
     }
 
 private:
+    static constexpr int titleStripHeight = 24;
+    static constexpr float phaseLabelHeight = 15.0f;
+
+    struct PlotMetrics
+    {
+        float graphLeft = 0.0f;
+        float graphTop = 0.0f;
+        float graphRight = 0.0f;
+        float graphBottom = 0.0f;
+        float graphWidth = 0.0f;
+        float graphHeight = 0.0f;
+    };
+
+    static PlotMetrics getPlotMetrics(juce::Rectangle<int> contentBounds)
+    {
+        constexpr float horizontalPadding = 9.0f;
+        constexpr float topPadding = 15.0f;
+        constexpr float bottomPadding = 7.0f;
+
+        PlotMetrics metrics;
+        metrics.graphLeft = static_cast<float>(contentBounds.getX()) + horizontalPadding;
+        metrics.graphTop = static_cast<float>(contentBounds.getY()) + topPadding;
+        metrics.graphWidth = static_cast<float>(contentBounds.getWidth()) - horizontalPadding * 2.0f;
+        metrics.graphHeight = static_cast<float>(contentBounds.getHeight()) - topPadding - bottomPadding - phaseLabelHeight;
+        metrics.graphRight = metrics.graphLeft + metrics.graphWidth;
+        metrics.graphBottom = metrics.graphTop + metrics.graphHeight;
+        return metrics;
+    }
+
     static float timeToVisual(float value, float minValue, float maxValue)
     {
         value = juce::jlimit(minValue, maxValue, value);

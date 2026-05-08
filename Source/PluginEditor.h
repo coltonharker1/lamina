@@ -2,6 +2,7 @@
 
 #include <juce_audio_processors/juce_audio_processors.h>
 #include <juce_gui_basics/juce_gui_basics.h>
+#include <sonorous_visual/sonorous_visual.h>
 #include "PluginProcessor.h"
 #include "UnifiedVisualization.h"
 #include "InteractiveADSREnvelope.h"
@@ -28,29 +29,10 @@ public:
 
 private:
     //==============================================================================
-    class MonoPrintLookAndFeel : public juce::LookAndFeel_V4
-    {
-    public:
-        void drawRotarySlider(juce::Graphics& g, int x, int y, int width, int height,
-                              float sliderPosProportional, float rotaryStartAngle,
-                              float rotaryEndAngle, juce::Slider& slider) override;
-        void drawButtonBackground(juce::Graphics& g, juce::Button& button,
-                                  const juce::Colour& backgroundColour,
-                                  bool shouldDrawButtonAsHighlighted,
-                                  bool shouldDrawButtonAsDown) override;
-        void drawButtonText(juce::Graphics& g, juce::TextButton& button,
-                            bool shouldDrawButtonAsHighlighted,
-                            bool shouldDrawButtonAsDown) override;
-        void drawScrollbar(juce::Graphics& g, juce::ScrollBar& scrollbar,
-                           int x, int y, int width, int height, bool isScrollbarVertical,
-                           int thumbStartPosition, int thumbSize, bool isMouseOver,
-                           bool isMouseDown) override;
-        juce::Font getTabButtonFont(juce::TabBarButton& button, float height) override;
-        void drawTabButton(juce::TabBarButton& button, juce::Graphics& g,
-                           bool isMouseOver, bool isMouseDown) override;
-        void drawTabButtonText(juce::TabBarButton& button, juce::Graphics& g,
-                               bool isMouseOver, bool isMouseDown) override;
-    };
+    // The plugin used to declare its own MonoPrintLookAndFeel here. It now uses
+    // sonorous::SonorousLookAndFeel from sonorous-kit so visual styling stays
+    // consistent across the Project Sonorous instrument line. The member name
+    // below is kept for source compatibility with the rest of the editor.
 
     // Slider listener
     void sliderValueChanged (juce::Slider* slider) override;
@@ -74,7 +56,7 @@ private:
 
     //==============================================================================
     GrainsAudioProcessor& audioProcessor;
-    MonoPrintLookAndFeel monoPrintLookAndFeel;
+    sonorous::SonorousLookAndFeel monoPrintLookAndFeel;
     juce::Typeface::Ptr instrumentSerifRegular;
     juce::Typeface::Ptr instrumentSerifItalic;
     juce::Typeface::Ptr jetBrainsMono;
